@@ -6,6 +6,15 @@ import type { AuditRequest, AuditResult, AuditSummary } from './types';
 
 const API_BASE = '/api';
 
+/** Convert a local file path to an API URL for screenshots */
+function toScreenshotUrl(path: string | null): string | null {
+  if (!path) return null;
+  // Extract filename from full path (Windows or Unix)
+  const filename = path.replace(/\\/g, '/').split('/').pop();
+  if (!filename) return null;
+  return `${API_BASE}/screenshots/${filename}`;
+}
+
 /**
  * Start a new audit via SSE.
  * Returns an EventSource that streams AuditEvent messages.
@@ -148,8 +157,8 @@ export async function getAudit(id: string): Promise<AuditResult> {
         confidence: cat.confidence as number | null,
       } : null,
       screenshots: screenshots ? {
-        viewport_path: screenshots.viewport_path as string | null,
-        fullpage_path: screenshots.fullpage_path as string | null,
+        viewport_path: toScreenshotUrl(screenshots.viewport_path as string | null),
+        fullpage_path: toScreenshotUrl(screenshots.fullpage_path as string | null),
       } : null,
       // Pass through extra backend fields
       action: r.action as string | undefined,

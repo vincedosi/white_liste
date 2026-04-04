@@ -5,3 +5,5 @@ output/screenshots/
 output/history/
 *.egg-info/
 .claude/
+frontend/.next/
+frontend/node_modules/
