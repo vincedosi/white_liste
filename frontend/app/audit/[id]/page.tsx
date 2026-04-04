@@ -101,6 +101,7 @@ export default function AuditResultPage() {
 
   /* Derived data */
   const sites = audit?.sites ?? [];
+  const auditLogs = audit?.log ?? [];
 
   const healthCounts = useMemo(() => {
     let healthy = 0;
@@ -149,30 +150,33 @@ export default function AuditResultPage() {
   );
 
   const adTechData = useMemo(() => {
-    // Placeholder: derive from attention or ads_txt
-    // In a real implementation the backend would return adtech details
     return sites
-      .filter((s) => s.health.status === 'ok')
+      .filter((s) => s.health.status === 'ok' && s.adtech)
       .map((s) => ({
         domain: s.domain,
-        adtech: {} as Record<string, boolean>,
-        trackers: 0,
+        adtech: (s.adtech || {}) as Record<string, boolean>,
+        trackers: (s.trackers as Record<string, unknown>)?.total as number || 0,
       }));
   }, [sites]);
 
   const sspData = useMemo(() => {
-    // Aggregate sellers from ads_txt if available
+    // Aggregate top SSPs from ads_txt data
     const counts: Record<string, number> = {};
     for (const s of sites) {
-      if (s.ads_txt?.present && s.ads_txt.sellers_count) {
-        // Without detailed SSP data we use a placeholder
+      const adsTxt = s.ads_txt as Record<string, unknown> | null;
+      if (!adsTxt) continue;
+      // ads_txt might have top_ssps from backend or from our mapping
+      const topSsps = (adsTxt as unknown as { top_ssps?: string[] }).top_ssps;
+      if (topSsps && Array.isArray(topSsps)) {
+        for (const ssp of topSsps) {
+          counts[ssp] = (counts[ssp] || 0) + 1;
+        }
       }
     }
-    // Return empty for now -- backend should provide SSP breakdown
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
+      .slice(0, 15);
   }, [sites]);
 
   const geoData = useMemo(
@@ -367,7 +371,7 @@ export default function AuditResultPage() {
       ) : currentTab === 'Geo' ? (
         <ServerMap data={geoData} />
       ) : currentTab === 'Journal' ? (
-        <JournalPanel />
+        <JournalPanel logs={auditLogs} />
       ) : (
         <SiteTable sites={filteredSites} onDomainClick={setSelectedDomain} />
       )}
@@ -420,16 +424,49 @@ function PageHeader({
   );
 }
 
-function JournalPanel() {
+function JournalPanel({ logs }: { logs: string[] }) {
+  const logText = logs.join('\n');
+
+  const handleDownload = () => {
+    const blob = new Blob([logText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit_log.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card>
-      <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-4">
-        Journal d&apos;audit
-      </h3>
-      <div className="bg-surface-mid rounded-lg p-4 max-h-[400px] overflow-y-auto font-mono text-xs text-muted space-y-1">
-        <p className="text-dim">
-          Le journal sera disponible pour les audits lances depuis cette interface.
-        </p>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim">
+          Journal d&apos;audit
+        </h3>
+        {logs.length > 0 && (
+          <button
+            onClick={handleDownload}
+            className="text-xs font-mono text-primary hover:text-primary-dim transition-colors"
+          >
+            Telecharger
+          </button>
+        )}
+      </div>
+      <div className="bg-surface-deepest rounded-lg p-4 max-h-[500px] overflow-y-auto font-mono text-xs text-muted space-y-0.5">
+        {logs.length > 0 ? (
+          logs.map((line, i) => (
+            <div key={i} className={
+              line.includes('━━') ? 'text-primary font-medium mt-2' :
+              line.includes('✓') ? 'text-emerald-400' :
+              line.includes('✗') ? 'text-red-400' :
+              ''
+            }>
+              {line}
+            </div>
+          ))
+        ) : (
+          <p className="text-dim">Aucun journal disponible pour cet audit.</p>
+        )}
       </div>
     </Card>
   );

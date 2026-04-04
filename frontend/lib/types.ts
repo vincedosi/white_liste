@@ -74,6 +74,7 @@ export interface AdsTxtResult {
   sellers_count: number | null;
   direct_count: number | null;
   reseller_count: number | null;
+  top_ssps?: string[];
 }
 
 export interface GeoResult {
@@ -107,16 +108,29 @@ export interface SiteAudit {
   geo: GeoResult | null;
   category: CategoryResult | null;
   screenshots: ScreenshotPaths | null;
+  action?: string;
+  action_reason?: string;
+  adtech?: Record<string, unknown>;
+  trackers?: Record<string, unknown>;
+  load_time_ms?: number;
 }
 
 /* ---- Audit-level aggregates -------------------------------------- */
 
 export interface AuditSummary {
   id: string;
+  audit_id?: string;
   client: string;
+  client_name?: string;
   domain_count: number;
+  total_sites?: number;
   created_at: string;
+  audit_date?: string;
   status: 'running' | 'completed' | 'failed';
+  avg_attention_score?: number;
+  sites_alive?: number;
+  sites_dead?: number;
+  sites_mfa?: number;
 }
 
 export interface AuditResult {
@@ -135,4 +149,5 @@ export interface AuditResult {
     ads_txt_present: number;
     ads_txt_absent: number;
   };
+  log?: string[];
 }

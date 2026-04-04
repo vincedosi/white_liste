@@ -44,7 +44,7 @@ export function useAuditStream(): UseAuditStreamReturn {
     abortRef.current = controller;
 
     try {
-      const response = await fetch(`${API_BASE}/audits/stream`, {
+      const response = await fetch(`${API_BASE}/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),

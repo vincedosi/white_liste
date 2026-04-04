@@ -39,7 +39,7 @@ def _ensure_dirs():
     SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _save_report(audit_id: str, report: AuditReport) -> None:
+def _save_report(audit_id: str, report: AuditReport, logs: list[str] | None = None) -> None:
     """Save audit report to output/history/."""
     _ensure_dirs()
     path = HISTORY_DIR / f"{audit_id}.json"
@@ -57,6 +57,7 @@ def _save_report(audit_id: str, report: AuditReport) -> None:
             "category_distribution": report.category_distribution,
         },
         "results": [r.model_dump() for r in report.results],
+        "log": logs or [],
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2, default=str)
@@ -78,6 +79,7 @@ async def run_audit(request: AuditRequest):
     async def event_generator():
         audit_id = str(uuid4())
         domains = [d.strip().lower() for d in request.domains if d.strip()]
+        audit_logs: list[str] = []  # Collect all log messages for saving
 
         if not domains:
             yield dict(
@@ -86,6 +88,13 @@ async def run_audit(request: AuditRequest):
             )
             return
 
+        def _log(message: str):
+            """Collect log message with timestamp."""
+            ts = datetime.now().strftime("%H:%M:%S")
+            audit_logs.append(f"[{ts}] {message}")
+            return message
+
+        _log(f"Starting audit {audit_id} for {len(domains)} domains")
         yield dict(
             event="log",
             data=json.dumps({
@@ -139,7 +148,7 @@ async def run_audit(request: AuditRequest):
             yield dict(
                 event="log",
                 data=json.dumps({
-                    "message": f"Health check complete: {len(alive_domains)}/{len(domains)} alive",
+                    "message": _log(f"Health check complete: {len(alive_domains)}/{len(domains)} alive"),
                     "level": "info",
                 }),
             )
@@ -147,7 +156,7 @@ async def run_audit(request: AuditRequest):
             yield dict(
                 event="log",
                 data=json.dumps({
-                    "message": f"Health check failed: {e}",
+                    "message": _log(f"Health check failed: {e}"),
                     "level": "error",
                 }),
             )
@@ -198,7 +207,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"Attention scoring complete for {len(attention_results)} domains",
+                        "message": _log(f"Attention scoring complete for {len(attention_results)} domains"),
                         "level": "info",
                     }),
                 )
@@ -206,7 +215,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"Attention scoring failed: {e}",
+                        "message": _log(f"Attention scoring failed: {e}"),
                         "level": "error",
                     }),
                 )
@@ -249,7 +258,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"ads.txt check failed: {e}",
+                        "message": _log(f"ads.txt check failed: {e}"),
                         "level": "error",
                     }),
                 )
@@ -282,7 +291,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"Geo localization failed: {e}",
+                        "message": _log(f"Geo localization failed: {e}"),
                         "level": "error",
                     }),
                 )
@@ -318,7 +327,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"Screenshots failed: {e}",
+                        "message": _log(f"Screenshots failed: {e}"),
                         "level": "error",
                     }),
                 )
@@ -364,7 +373,7 @@ async def run_audit(request: AuditRequest):
                 yield dict(
                     event="log",
                     data=json.dumps({
-                        "message": f"Categorization failed: {e}",
+                        "message": _log(f"Categorization failed: {e}"),
                         "level": "error",
                     }),
                 )
@@ -382,12 +391,13 @@ async def run_audit(request: AuditRequest):
 
         # Save to history
         try:
-            _save_report(audit_id, report)
+            _log("Audit complete")
+            _save_report(audit_id, report, logs=audit_logs)
         except Exception as e:
             yield dict(
                 event="log",
                 data=json.dumps({
-                    "message": f"Failed to save report: {e}",
+                    "message": _log(f"Failed to save report: {e}"),
                     "level": "warning",
                 }),
             )
