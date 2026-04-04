@@ -14,6 +14,7 @@ import { SiteTable } from '@/components/dashboard/SiteTable';
 import { SiteModal } from '@/components/dashboard/SiteModal';
 import { SspChart } from '@/components/dashboard/SspChart';
 import { ServerMap } from '@/components/dashboard/ServerMap';
+import { CategoryChart } from '@/components/dashboard/CategoryChart';
 
 import { getAudit } from '@/lib/api';
 import type { AuditResult, SiteAudit } from '@/lib/types';
@@ -181,12 +182,33 @@ export default function AuditResultPage() {
         .map((s) => ({
           domain: s.domain,
           country: s.geo!.country ?? '--',
+          countryCode: s.geo!.country_code ?? '',
           city: '--',
           ip: s.geo!.ip ?? '--',
           isp: '--',
+          score: s.attention?.score,
+          action:
+            s.health.status !== 'ok'
+              ? 'remove'
+              : s.attention && s.attention.score < 4
+                ? 'remove'
+                : s.attention && s.attention.score < 7
+                  ? 'flag'
+                  : 'keep',
         })),
     [sites],
   );
+
+  const categoryData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of sites) {
+      if (s.category?.iab_category) {
+        const cat = s.category.iab_category;
+        counts[cat] = (counts[cat] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [sites]);
 
   const selectedSite = useMemo(
     () => sites.find((s) => s.domain === selectedDomain) ?? null,
@@ -305,6 +327,11 @@ export default function AuditResultPage() {
           </Card>
         )}
       </div>
+
+      {/* Category chart */}
+      {Object.keys(categoryData).length > 0 && (
+        <CategoryChart data={categoryData} />
+      )}
 
       {/* Attention bar chart */}
       {attentionData.length > 0 && <AttentionBar data={attentionData} />}

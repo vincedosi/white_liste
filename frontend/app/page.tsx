@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { PlayCircle, Eye, FileText, Globe, Brain, Camera, Sparkles } from 'lucide-react';
+import { PlayCircle, Eye, FileText, Globe, Brain, Camera, Sparkles, Clock, ArrowUpRight, BarChart3 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
 import { AuditProgress } from '@/components/audit/AuditProgress';
 import { useAuditStream } from '@/hooks/useAuditStream';
-import type { AuditModules } from '@/lib/types';
+import { getAudits } from '@/lib/api';
+import type { AuditModules, AuditSummary } from '@/lib/types';
 import clsx from 'clsx';
 
 const MODULES = [
@@ -29,7 +31,24 @@ export default function HomePage() {
     Object.fromEntries(MODULES.map((m) => [m.key, m.defaultOn])) as Record<ModuleKey, boolean>,
   );
 
+  const [recentAudits, setRecentAudits] = useState<AuditSummary[]>([]);
+
   const { logs, currentStep, isRunning, error, auditId, startAudit } = useAuditStream();
+
+  /* Fetch recent audits */
+  useEffect(() => {
+    getAudits()
+      .then((data) => {
+        data.sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+        setRecentAudits(data.slice(0, 3));
+      })
+      .catch(() => {
+        // Silently fail — recent audits are optional
+      });
+  }, []);
 
   const domainCount = domains
     .split('\n')
@@ -278,6 +297,65 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {/* Recent audits section */}
+      {recentAudits.length > 0 && !isRunning && (
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              <Clock size={14} className="text-dim" />
+              <h2 className="text-xs font-mono font-medium text-muted uppercase tracking-wider">
+                Derniers audits
+              </h2>
+            </div>
+            <button
+              onClick={() => router.push('/history')}
+              className="text-xs font-mono text-dim hover:text-primary transition-colors flex items-center gap-1"
+            >
+              Voir tout
+              <ArrowUpRight size={12} />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {recentAudits.map((audit) => (
+              <Card
+                key={audit.id}
+                hover
+                className="cursor-pointer p-4"
+              >
+                <div
+                  onClick={() => router.push(`/audit/${audit.id}`)}
+                  className="flex items-start gap-3"
+                >
+                  <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-surface-high flex-shrink-0 mt-0.5">
+                    <BarChart3 size={15} className="text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="text-sm font-semibold text-on-surface truncate">
+                        {audit.client}
+                      </h3>
+                      <Badge variant={audit.status === 'completed' ? 'ok' : audit.status === 'running' ? 'flag' : 'dead'}>
+                        {audit.status === 'completed' ? 'OK' : audit.status === 'running' ? 'En cours' : 'Echoue'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] font-mono text-dim">
+                      <span>
+                        {new Date(audit.created_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                        })}
+                      </span>
+                      <span>{audit.domain_count} site{audit.domain_count > 1 ? 's' : ''}</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

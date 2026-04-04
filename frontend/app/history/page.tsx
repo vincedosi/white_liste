@@ -1,52 +1,415 @@
 'use client';
 
-import { Clock, Search, Inbox } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Clock,
+  Search,
+  Inbox,
+  Trash2,
+  ArrowUpRight,
+  Upload,
+  AlertTriangle,
+  X,
+  CheckCircle,
+  BarChart3,
+  Globe,
+} from 'lucide-react';
+import clsx from 'clsx';
+
 import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { getAudits, deleteAudit } from '@/lib/api';
+import type { AuditSummary } from '@/lib/types';
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function statusBadge(status: AuditSummary['status']) {
+  switch (status) {
+    case 'completed':
+      return <Badge variant="ok">Termine</Badge>;
+    case 'running':
+      return <Badge variant="flag">En cours</Badge>;
+    case 'failed':
+      return <Badge variant="dead">Echoue</Badge>;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Delete confirmation dialog                                          */
+/* ------------------------------------------------------------------ */
+
+function ConfirmDialog({
+  open,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  open: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface-low border border-outline/20 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-danger/10 border border-danger/20">
+            <AlertTriangle size={18} className="text-danger" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-on-surface">
+              Supprimer cet audit ?
+            </h3>
+            <p className="text-xs text-muted mt-0.5">
+              Cette action est irreversible.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 mt-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            Annuler
+          </Button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={clsx(
+              'flex-1 h-8 px-3 text-xs font-medium tracking-wide uppercase rounded-lg',
+              'bg-danger/15 text-danger border border-danger/20',
+              'hover:bg-danger/25 transition-all',
+              'disabled:opacity-40 disabled:pointer-events-none',
+            )}
+          >
+            {loading ? 'Suppression...' : 'Supprimer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Main page                                                           */
+/* ------------------------------------------------------------------ */
 
 export default function HistoryPage() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [audits, setAudits] = useState<AuditSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  /* Fetch audits */
+  const fetchAudits = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAudits();
+      // Sort by date descending
+      data.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+      setAudits(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erreur de chargement');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAudits();
+  }, [fetchAudits]);
+
+  /* Filtered audits */
+  const filtered = useMemo(() => {
+    if (!search.trim()) return audits;
+    const q = search.toLowerCase();
+    return audits.filter(
+      (a) =>
+        a.client.toLowerCase().includes(q) ||
+        a.id.toLowerCase().includes(q),
+    );
+  }, [audits, search]);
+
+  /* Delete handler */
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await deleteAudit(deleteTarget);
+      setAudits((prev) => prev.filter((a) => a.id !== deleteTarget));
+      setDeleteTarget(null);
+    } catch {
+      // Keep dialog open on error
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  /* Import JSON */
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string);
+        // If the JSON has an id, navigate to it
+        if (data?.id) {
+          router.push(`/audit/${data.id}`);
+        }
+      } catch {
+        // Invalid JSON — ignore
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="min-h-screen p-6 lg:p-10 lg:pt-8">
       {/* Page header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 border border-primary/20">
-            <Clock size={16} className="text-primary" />
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 border border-primary/20">
+                <Clock size={16} className="text-primary" />
+              </div>
+              <h1 className="text-2xl font-sans font-bold tracking-tight text-on-surface">
+                Historique des audits
+              </h1>
+            </div>
+            <p className="text-sm text-muted ml-11">
+              Retrouvez et comparez vos audits passes.
+            </p>
           </div>
-          <h1 className="text-2xl font-sans font-bold tracking-tight text-on-surface">
-            Historique des audits
-          </h1>
+
+          {/* Import button */}
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImport}
+              className="hidden"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={14} />
+              Importer JSON
+            </Button>
+          </div>
         </div>
-        <p className="text-sm text-muted ml-11">
-          Retrouvez et comparez vos audits passes.
-        </p>
       </div>
 
       {/* Search bar */}
       <Card className="mb-6">
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dim" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-dim"
+          />
           <input
             type="text"
-            placeholder="Rechercher par client ou domaine..."
-            className="w-full bg-transparent pl-10 pr-4 py-2 text-sm text-on-surface placeholder:text-dim/50 focus:outline-none"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher par client..."
+            className="w-full bg-transparent pl-10 pr-10 py-2 text-sm text-on-surface placeholder:text-dim/50 focus:outline-none font-mono"
           />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-dim hover:text-on-surface transition-colors"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </Card>
 
+      {/* Loading state */}
+      {loading && (
+        <Card className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
+          <p className="text-sm text-muted font-mono">Chargement...</p>
+        </Card>
+      )}
+
+      {/* Error state */}
+      {!loading && error && (
+        <Card className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-danger/10 mb-5">
+            <AlertTriangle size={24} className="text-danger" />
+          </div>
+          <h2 className="text-base font-semibold text-on-surface mb-1.5">
+            Erreur de chargement
+          </h2>
+          <p className="text-sm text-muted max-w-sm mb-4">{error}</p>
+          <Button variant="secondary" size="sm" onClick={fetchAudits}>
+            Reessayer
+          </Button>
+        </Card>
+      )}
+
       {/* Empty state */}
-      <Card className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-surface-high/60 mb-5">
-          <Inbox size={24} className="text-dim" />
+      {!loading && !error && filtered.length === 0 && (
+        <Card className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-surface-high/60 mb-5">
+            <Inbox size={24} className="text-dim" />
+          </div>
+          <h2 className="text-base font-semibold text-on-surface mb-1.5">
+            {search ? 'Aucun resultat' : 'Aucun audit'}
+          </h2>
+          <p className="text-sm text-muted max-w-sm">
+            {search ? (
+              <>
+                Aucun audit ne correspond a{' '}
+                <span className="text-primary font-medium">
+                  &ldquo;{search}&rdquo;
+                </span>
+                .
+              </>
+            ) : (
+              <>
+                Lancez votre premier audit depuis la page{' '}
+                <button
+                  onClick={() => router.push('/')}
+                  className="text-primary font-medium hover:underline"
+                >
+                  Nouvel Audit
+                </button>{' '}
+                pour voir les resultats ici.
+              </>
+            )}
+          </p>
+        </Card>
+      )}
+
+      {/* Audit list */}
+      {!loading && !error && filtered.length > 0 && (
+        <div className="space-y-3">
+          {filtered.map((audit) => (
+            <Card
+              key={audit.id}
+              hover
+              className="group cursor-pointer p-0 overflow-hidden"
+            >
+              <div className="flex items-center gap-4 p-4 lg:p-5">
+                {/* Icon */}
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-high flex-shrink-0">
+                  <BarChart3 size={18} className="text-primary" />
+                </div>
+
+                {/* Info */}
+                <div
+                  className="flex-1 min-w-0 cursor-pointer"
+                  onClick={() => router.push(`/audit/${audit.id}`)}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="text-sm font-semibold text-on-surface truncate">
+                      {audit.client}
+                    </h3>
+                    {statusBadge(audit.status)}
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-mono text-dim">
+                    <span>{formatDate(audit.created_at)}</span>
+                    <span className="flex items-center gap-1">
+                      <Globe size={10} />
+                      {audit.domain_count} site
+                      {audit.domain_count > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTarget(audit.id);
+                    }}
+                    className={clsx(
+                      'flex items-center justify-center w-8 h-8 rounded-lg',
+                      'text-dim hover:text-danger hover:bg-danger/10',
+                      'transition-all opacity-0 group-hover:opacity-100',
+                    )}
+                    title="Supprimer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => router.push(`/audit/${audit.id}`)}
+                    className={clsx(
+                      'flex items-center justify-center w-8 h-8 rounded-lg',
+                      'text-dim hover:text-primary hover:bg-primary/10',
+                      'transition-all',
+                    )}
+                    title="Voir"
+                  >
+                    <ArrowUpRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+
+          {/* Count footer */}
+          <p className="text-center text-xs font-mono text-dim pt-2">
+            {filtered.length} audit{filtered.length > 1 ? 's' : ''}
+            {search && audits.length !== filtered.length && (
+              <> sur {audits.length}</>
+            )}
+          </p>
         </div>
-        <h2 className="text-base font-semibold text-on-surface mb-1.5">
-          Aucun audit
-        </h2>
-        <p className="text-sm text-muted max-w-sm">
-          Lancez votre premier audit depuis la page{' '}
-          <span className="text-primary font-medium">Nouvel Audit</span>{' '}
-          pour voir les resultats ici.
-        </p>
-      </Card>
+      )}
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+        loading={deleteLoading}
+      />
     </div>
   );
 }

@@ -7,7 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 
 router = APIRouter()
 
@@ -67,3 +68,33 @@ async def delete_audit(audit_id: str):
         return {"status": "deleted", "audit_id": audit_id}
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Error deleting audit: {e}")
+
+
+@router.post("/api/audits/import")
+async def import_audit(file: UploadFile = File(...)):
+    """Import an audit JSON file into history."""
+    _ensure_history_dir()
+    try:
+        content = await file.read()
+        data = json.loads(content.decode("utf-8"))
+        if "results" not in data or "stats" not in data:
+            raise HTTPException(status_code=400, detail="Invalid audit JSON: missing results or stats")
+        audit_id = data.get("audit_id", file.filename.replace(".json", ""))
+        path = HISTORY_DIR / f"{audit_id}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        return {"status": "imported", "audit_id": audit_id}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+
+SCREENSHOTS_DIR = Path(__file__).parent.parent.parent / "output" / "screenshots"
+
+
+@router.get("/api/screenshots/{filename}")
+async def get_screenshot(filename: str):
+    """Serve a screenshot image."""
+    path = SCREENSHOTS_DIR / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return FileResponse(path, media_type="image/png")
