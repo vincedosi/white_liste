@@ -1,0 +1,57 @@
+"""
+MLI — FastAPI Backend Entry Point
+
+Usage:
+    cd backend
+    uvicorn main:app --reload --port 8000
+"""
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from routers import audit, history, health
+
+app = FastAPI(
+    title="MLI - Media List Intelligence",
+    description="API for automated whitelist auditing",
+    version="1.0.0",
+)
+
+# ── CORS ─────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Routers ──────────────────────────────────────────────
+app.include_router(health.router, tags=["health"])
+app.include_router(audit.router, tags=["audit"])
+app.include_router(history.router, tags=["history"])
+
+# ── Static files for screenshots ─────────────────────────
+SCREENSHOTS_DIR = Path(__file__).parent.parent / "output" / "screenshots"
+SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/static/screenshots",
+    StaticFiles(directory=str(SCREENSHOTS_DIR)),
+    name="screenshots",
+)
+
+
+@app.get("/")
+async def root():
+    return {
+        "name": "MLI - Media List Intelligence API",
+        "version": "1.0.0",
+        "docs": "/docs",
+    }
