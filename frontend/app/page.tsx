@@ -1,9 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { PlayCircle, Eye, FileText, Globe, Brain, Camera, Sparkles } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { AuditProgress } from '@/components/audit/AuditProgress';
+import { useAuditStream } from '@/hooks/useAuditStream';
+import type { AuditModules } from '@/lib/types';
 import clsx from 'clsx';
 
 const MODULES = [
@@ -17,6 +21,7 @@ const MODULES = [
 type ModuleKey = (typeof MODULES)[number]['key'];
 
 export default function HomePage() {
+  const router = useRouter();
   const [domains, setDomains] = useState('');
   const [client, setClient] = useState('');
   const [mistralKey, setMistralKey] = useState('');
@@ -24,14 +29,45 @@ export default function HomePage() {
     Object.fromEntries(MODULES.map((m) => [m.key, m.defaultOn])) as Record<ModuleKey, boolean>,
   );
 
+  const { logs, currentStep, isRunning, error, auditId, startAudit } = useAuditStream();
+
   const domainCount = domains
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean).length;
 
   const toggleModule = (key: ModuleKey) => {
+    if (isRunning) return;
     setModules((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+
+  const handleLaunch = () => {
+    const domainList = domains
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (domainList.length === 0) return;
+
+    startAudit({
+      domains: domainList,
+      client: client.trim() || 'Sans nom',
+      modules: modules as AuditModules,
+      ...(modules.categorization && mistralKey ? { mistral_key: mistralKey } : {}),
+    });
+  };
+
+  // Redirect to audit results page once audit completes with an ID
+  useEffect(() => {
+    if (auditId && !isRunning && !error) {
+      const timer = setTimeout(() => {
+        router.push(`/audit/${auditId}`);
+      }, 1500); // Brief delay so user can see the final logs
+      return () => clearTimeout(timer);
+    }
+  }, [auditId, isRunning, error, router]);
+
+  const formDisabled = isRunning;
 
   return (
     <div className="min-h-screen p-6 lg:p-10 lg:pt-8">
@@ -62,6 +98,7 @@ export default function HomePage() {
               type="text"
               value={client}
               onChange={(e) => setClient(e.target.value)}
+              disabled={formDisabled}
               placeholder="Nom du client..."
               className={clsx(
                 'w-full bg-surface-deepest border border-outline/20 rounded-lg',
@@ -69,6 +106,7 @@ export default function HomePage() {
                 'placeholder:text-dim/50',
                 'focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20',
                 'transition-colors',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             />
           </Card>
@@ -88,6 +126,7 @@ export default function HomePage() {
             <textarea
               value={domains}
               onChange={(e) => setDomains(e.target.value)}
+              disabled={formDisabled}
               placeholder={[
                 'example.com',
                 'lemonde.fr',
@@ -102,6 +141,7 @@ export default function HomePage() {
                 'caret-primary',
                 'focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20',
                 'transition-colors resize-none',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             />
             <p className="mt-2 text-[11px] text-dim">
@@ -119,6 +159,7 @@ export default function HomePage() {
                 type="password"
                 value={mistralKey}
                 onChange={(e) => setMistralKey(e.target.value)}
+                disabled={formDisabled}
                 placeholder="sk-..."
                 className={clsx(
                   'w-full bg-surface-deepest border border-outline/20 rounded-lg',
@@ -126,12 +167,32 @@ export default function HomePage() {
                   'placeholder:text-dim/50',
                   'focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20',
                   'transition-colors',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               />
               <p className="mt-2 text-[11px] text-dim">
                 Requis pour la categorisation IAB via Mistral AI.
               </p>
             </Card>
+          )}
+
+          {/* Progress section — shown when audit is running or has logs */}
+          {(isRunning || logs.length > 0) && (
+            <AuditProgress
+              isRunning={isRunning}
+              currentStep={currentStep}
+              logs={logs}
+              error={error}
+            />
+          )}
+
+          {/* Redirect notice */}
+          {auditId && !isRunning && !error && (
+            <div className="text-center py-3">
+              <p className="text-sm font-mono text-primary animate-pulse">
+                Audit termine — redirection en cours...
+              </p>
+            </div>
           )}
         </div>
 
@@ -149,9 +210,11 @@ export default function HomePage() {
                   <button
                     key={mod.key}
                     onClick={() => toggleModule(mod.key)}
+                    disabled={formDisabled}
                     className={clsx(
                       'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left',
                       'transition-all duration-150',
+                      'disabled:opacity-50 disabled:cursor-not-allowed',
                       active
                         ? 'bg-primary/8 border border-primary/20 text-on-surface'
                         : 'bg-surface-mid/50 border border-transparent text-muted hover:text-on-surface hover:bg-surface-high/50',
@@ -199,13 +262,15 @@ export default function HomePage() {
             variant="primary"
             size="lg"
             className="w-full"
-            disabled={domainCount === 0}
+            disabled={domainCount === 0 || isRunning}
+            loading={isRunning}
+            onClick={handleLaunch}
           >
             <PlayCircle size={18} />
-            Lancer l&apos;audit
+            {isRunning ? 'Audit en cours...' : "Lancer l'audit"}
           </Button>
 
-          {domainCount > 0 && (
+          {domainCount > 0 && !isRunning && (
             <p className="text-center text-xs font-mono text-dim">
               {domainCount} domaine{domainCount > 1 ? 's' : ''} &middot;{' '}
               {Object.values(modules).filter(Boolean).length} module{Object.values(modules).filter(Boolean).length > 1 ? 's' : ''}
