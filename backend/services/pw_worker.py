@@ -536,19 +536,21 @@ def detect_trackers(page) -> dict:
         return {"total": 0}
 
 
-def analyze_ads_multi_layer(page) -> list[dict]:
+def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
     """
     Detection pub multi-couche par COMPORTEMENT puis selectors.
     Couche 1 : Comportement (iframes cross-origin, taille IAB, slots GPT, blocs sponsors)
     Couche 2 : Selectors connus (high + medium confiance)
     Tout deduplique via Set() d'elements DOM.
+    When highlight=True, ads are outlined in red directly during detection
+    (no second pass / position matching needed).
     """
     iab_json = json.dumps(IAB_SIZES)
     ad_domains_json = json.dumps(AD_NETWORK_DOMAINS)
 
     js = f"""
     (args) => {{
-        const [highSel, medSel] = args;
+        const [highSel, medSel, doHighlight] = args;
         const ads = [];
         const seen = new Set();
         const scrollY = window.scrollY || document.documentElement.scrollTop;
@@ -557,6 +559,35 @@ def analyze_ads_multi_layer(page) -> list[dict]:
         const adDomains = {ad_domains_json};
         const iabSizes = {iab_json};
         const tolerance = 20;
+
+        // Inject highlight styles once if highlighting
+        if (doHighlight) {{
+            const style = document.createElement('style');
+            style.textContent = `
+                .mli-ad-highlight {{
+                    outline: 3px solid #ef4444 !important;
+                    outline-offset: 2px !important;
+                    position: relative !important;
+                }}
+                .mli-ad-label {{
+                    position: absolute !important;
+                    top: -2px !important;
+                    right: -2px !important;
+                    background: #ef4444 !important;
+                    color: white !important;
+                    font-size: 9px !important;
+                    font-weight: bold !important;
+                    padding: 1px 6px !important;
+                    border-radius: 0 0 0 4px !important;
+                    z-index: 999999 !important;
+                    font-family: Arial, sans-serif !important;
+                    pointer-events: none !important;
+                }}
+                .mli-ad-sticky {{ outline-color: #7C3AED !important; outline-width: 4px !important; }}
+                .mli-ad-sticky .mli-ad-label {{ background: #7C3AED !important; }}
+            `;
+            document.head.appendChild(style);
+        }}
 
         function isAdDomain(hostname) {{
             return adDomains.some(d => hostname === d || hostname.endsWith('.' + d));
@@ -576,17 +607,40 @@ def analyze_ads_multi_layer(page) -> list[dict]:
             const style = window.getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden') return;
 
+            const absY = Math.round(rect.y + scrollY);
+            const isSticky = style.position === 'fixed' || style.position === 'sticky';
+
             seen.add(el);
             ads.push({{
                 x: Math.round(rect.x),
-                y: Math.round(rect.y + scrollY),
+                y: absY,
                 width: Math.round(rect.width),
                 height: Math.round(rect.height),
                 area: Math.round(rect.width * rect.height),
-                is_sticky: style.position === 'fixed' || style.position === 'sticky',
+                is_sticky: isSticky,
                 tag: el.tagName.toLowerCase(),
                 method: method,
             }});
+
+            // Highlight inline — no second pass needed
+            if (doHighlight) {{
+                let zone = 'FOOTER';
+                if (isSticky) zone = 'STICKY';
+                else if (absY < 800) zone = 'ATF';
+                else if (absY < 2000) zone = 'MID';
+                else if (absY < 4000) zone = 'DEEP';
+
+                el.classList.add('mli-ad-highlight');
+                if (isSticky) el.classList.add('mli-ad-sticky');
+
+                const label = document.createElement('span');
+                label.className = 'mli-ad-label';
+                label.textContent = zone;
+                if (!style.position || style.position === 'static') {{
+                    el.style.position = 'relative';
+                }}
+                el.appendChild(label);
+            }}
         }}
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -737,7 +791,7 @@ def analyze_ads_multi_layer(page) -> list[dict]:
     }}
     """
     try:
-        return page.evaluate(js, [HIGH_CONFIDENCE_SELECTORS, MEDIUM_CONFIDENCE_SELECTORS])
+        return page.evaluate(js, [HIGH_CONFIDENCE_SELECTORS, MEDIUM_CONFIDENCE_SELECTORS, highlight])
     except Exception:
         return []
 
@@ -1056,81 +1110,9 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         page.evaluate("window.scrollTo(0, 0)")
         page.wait_for_timeout(5000)  # Wait for Prebid/GPT auctions
 
-        # Full analysis first (behavior + selectors)
-        ads = analyze_ads_multi_layer(page)
+        # Detect ads AND highlight them in a single pass (no position matching)
+        ads = analyze_ads_multi_layer(page, highlight=True)
 
-        # Highlight detected ads by position matching
-        highlight_js = """
-        (adPositions) => {
-            const style = document.createElement('style');
-            style.textContent = `
-                .mli-ad-highlight {
-                    outline: 3px solid #ef4444 !important;
-                    outline-offset: 2px !important;
-                    position: relative !important;
-                }
-                .mli-ad-label {
-                    position: absolute !important;
-                    top: -2px !important;
-                    right: -2px !important;
-                    background: #ef4444 !important;
-                    color: white !important;
-                    font-size: 9px !important;
-                    font-weight: bold !important;
-                    padding: 1px 6px !important;
-                    border-radius: 0 0 0 4px !important;
-                    z-index: 999999 !important;
-                    font-family: Arial, sans-serif !important;
-                    pointer-events: none !important;
-                }
-                .mli-ad-sticky { outline-color: #7C3AED !important; outline-width: 4px !important; }
-            `;
-            document.head.appendChild(style);
-
-            const scrollY = window.scrollY || 0;
-            let count = 0;
-
-            // Walk all elements and match by position
-            const allEls = document.querySelectorAll('iframe, div, section, aside, figure, ins, article, a');
-            allEls.forEach(el => {
-                if (el.classList.contains('mli-ad-highlight')) return;
-                const rect = el.getBoundingClientRect();
-                if (rect.width < 5 || rect.height < 5) return;
-                const elX = Math.round(rect.x);
-                const elY = Math.round(rect.y + scrollY);
-                const elW = Math.round(rect.width);
-                const elH = Math.round(rect.height);
-
-                const match = adPositions.find(a =>
-                    Math.abs(a.x - elX) < 5 && Math.abs(a.y - elY) < 5 &&
-                    Math.abs(a.width - elW) < 5 && Math.abs(a.height - elH) < 5
-                );
-                if (!match) return;
-
-                const absY = elY;
-                const cStyle = window.getComputedStyle(el);
-                const isSticky = cStyle.position === 'fixed' || cStyle.position === 'sticky';
-
-                let zone = 'FOOTER';
-                if (isSticky) zone = 'STICKY';
-                else if (absY < 800) zone = 'ATF';
-                else if (absY < 2000) zone = 'MID';
-                else if (absY < 4000) zone = 'DEEP';
-
-                el.classList.add('mli-ad-highlight');
-                if (isSticky) el.classList.add('mli-ad-sticky');
-
-                const label = document.createElement('span');
-                label.className = 'mli-ad-label';
-                label.textContent = zone;
-                el.style.position = el.style.position || 'relative';
-                el.appendChild(label);
-                count++;
-            });
-            return count;
-        }
-        """
-        page.evaluate(highlight_js, ads)
         adtech = detect_adtech_scripts(page)
         trackers = detect_trackers(page)
         net_stats = compute_network_stats(intercepted)
