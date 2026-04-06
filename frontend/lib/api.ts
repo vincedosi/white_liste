@@ -123,7 +123,8 @@ export async function getAudit(id: string): Promise<AuditResult> {
       },
       attention: attention.score !== undefined ? {
         domain: r.domain as string,
-        score: attention.score as number,
+        score: (attention.clutter_score ?? attention.score) as number,
+        clutter_score: (attention.clutter_score ?? attention.score) as number,
         raw_ad_count: attention.ad_count as number || 0,
         breakdown: {
           ads_above_fold: details.above_fold || 0,
@@ -132,6 +133,8 @@ export async function getAudit(id: string): Promise<AuditResult> {
           ads_footer: details.footer || 0,
           ads_sticky: details.sticky || 0,
         },
+        clutter_detail: attention.clutter_detail as Record<string, unknown> | undefined,
+        page_profile: attention.page_profile as Record<string, unknown> | undefined,
       } : null,
       ads_txt: ads ? {
         domain: r.domain as string,

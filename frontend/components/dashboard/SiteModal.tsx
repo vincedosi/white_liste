@@ -4,7 +4,7 @@ import { useEffect, useCallback, useState } from 'react';
 import clsx from 'clsx';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import type { SiteAudit } from '@/lib/types';
+import type { SiteAudit, ClutterDetail } from '@/lib/types';
 import { STATUS_CONFIG } from '@/lib/constants';
 
 interface SiteModalProps {
@@ -32,6 +32,142 @@ function ZoneCol({ label, value, color }: { label: string; value: number; color:
   );
 }
 
+function ClutterBar({ label, adPct, contentPct }: { label: string; adPct: number; contentPct: number }) {
+  const otherPct = Math.max(0, 100 - adPct - contentPct);
+  return (
+    <div className="flex items-center gap-3">
+      <span className="font-mono text-[10px] uppercase tracking-[1.5px] text-dim w-12 text-right shrink-0">{label}</span>
+      <div className="flex-1 flex h-5 rounded-md overflow-hidden bg-surface-deepest">
+        {adPct > 0 && (
+          <div
+            className="h-full bg-red-500/80 flex items-center justify-center"
+            style={{ width: `${Math.max(adPct, 2)}%` }}
+          >
+            {adPct >= 8 && <span className="text-[8px] font-mono text-white font-bold">{adPct}%</span>}
+          </div>
+        )}
+        {contentPct > 0 && (
+          <div
+            className="h-full bg-emerald-500/60 flex items-center justify-center"
+            style={{ width: `${Math.max(contentPct, 2)}%` }}
+          >
+            {contentPct >= 12 && <span className="text-[8px] font-mono text-white font-bold">{contentPct}%</span>}
+          </div>
+        )}
+        {otherPct > 0 && (
+          <div className="h-full bg-slate-600/30" style={{ width: `${otherPct}%` }} />
+        )}
+      </div>
+      <span className="font-mono text-[9px] text-dim w-28 shrink-0">
+        {adPct}% pub · {contentPct}% contenu
+      </span>
+    </div>
+  );
+}
+
+function getClutterExplanation(score: number, clutter: ClutterDetail): string {
+  const atfPct = Math.round(clutter.atf.ad_ratio * 100);
+  const midPct = Math.round(clutter.mid.ad_ratio * 100);
+  const contentRatio = clutter.atf.content_ratio;
+  const adRatio = clutter.atf.ad_ratio || 0.001;
+
+  if (score >= 8) {
+    return `Ce site offre une experience de lecture premium avec seulement ${atfPct}% de publicite visible a l'arrivee.`;
+  }
+  if (score >= 6) {
+    return `L'encombrement est acceptable avec ${atfPct}% de publicite en haut de page. La zone mid-page montre ${midPct}% de pub, ce qui reste dans la norme editoriale.`;
+  }
+  if (score >= 4) {
+    const zones = [
+      { name: 'ATF', ratio: clutter.atf.ad_ratio },
+      { name: 'Mid', ratio: clutter.mid.ad_ratio },
+      { name: 'Deep', ratio: clutter.deep.ad_ratio },
+    ];
+    const worst = zones.sort((a, b) => b.ratio - a.ratio)[0];
+    return `Attention : ${atfPct}% du viewport initial est occupe par de la publicite. L'experience utilisateur est significativement degradee, en particulier en ${worst.name} (${Math.round(worst.ratio * 100)}% de pub).`;
+  }
+  return `Ce site presente les caracteristiques d'un MFA (Made For Advertising). ${atfPct}% du premier ecran est publicitaire, avec un ratio contenu/pub de seulement ${(contentRatio / adRatio).toFixed(1)}.`;
+}
+
+function ClutterAnalysis({ site }: { site: SiteAudit }) {
+  const clutter = site.attention?.clutter_detail as ClutterDetail | undefined;
+  const score = site.attention?.clutter_score ?? site.attention?.score ?? null;
+
+  if (!clutter?.atf) return null;
+
+  const atfAdPct = Math.round(clutter.atf.ad_ratio * 100);
+  const atfContentPct = Math.round(clutter.atf.content_ratio * 100);
+  const midAdPct = Math.round(clutter.mid.ad_ratio * 100);
+  const midContentPct = Math.round(clutter.mid.content_ratio * 100);
+  const deepAdPct = Math.round(clutter.deep.ad_ratio * 100);
+  const deepContentPct = Math.round(clutter.deep.content_ratio * 100);
+
+  return (
+    <div>
+      <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-3">
+        Analyse de l&apos;encombrement
+      </h3>
+      <div className="bg-surface-mid/50 rounded-lg p-4 border border-outline/10 space-y-3">
+        {/* Bars */}
+        <div className="space-y-2">
+          <ClutterBar label="ATF" adPct={atfAdPct} contentPct={atfContentPct} />
+          <ClutterBar label="Mid" adPct={midAdPct} contentPct={midContentPct} />
+          <ClutterBar label="Deep" adPct={deepAdPct} contentPct={deepContentPct} />
+        </div>
+        {/* Legend */}
+        <div className="flex items-center gap-4 pt-1">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-red-500/80" />
+            <span className="text-[9px] font-mono text-dim">Pub</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500/60" />
+            <span className="text-[9px] font-mono text-dim">Contenu</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-sm bg-slate-600/30" />
+            <span className="text-[9px] font-mono text-dim">Autre</span>
+          </div>
+        </div>
+
+        {/* Explanation */}
+        {score !== null && (
+          <p className="text-xs text-muted leading-relaxed pt-1">
+            {getClutterExplanation(score, clutter)}
+          </p>
+        )}
+
+        {/* Ad details in ATF */}
+        {clutter.atf.ads_detail && clutter.atf.ads_detail.length > 0 && (
+          <div className="pt-1">
+            <span className="text-[9px] font-mono text-dim uppercase tracking-wider">
+              {clutter.atf.ads_visible} element(s) en ATF :
+            </span>
+            <ul className="mt-1 space-y-0.5">
+              {clutter.atf.ads_detail.slice(0, 5).map((ad, i) => {
+                const viewportArea = clutter.atf.viewport_area || (1280 * 800);
+                const pct = ((ad.visibleArea / viewportArea) * 100).toFixed(1);
+                return (
+                  <li key={i} className="text-[10px] font-mono text-muted">
+                    • {ad.width}x{ad.height} ({pct}% du viewport){ad.isSticky ? ' — sticky' : ''}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* Formula */}
+        {clutter.formula && (
+          <div className="pt-1 font-mono text-[9px] text-dim">
+            {clutter.formula}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SiteModal({ site, onClose }: SiteModalProps) {
   const [showFullpage, setShowFullpage] = useState(false);
 
@@ -55,7 +191,7 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
 
   if (!site) return null;
 
-  const score = site.attention?.score ?? null;
+  const score = site.attention?.clutter_score ?? site.attention?.score ?? null;
   const adCount = site.attention?.raw_ad_count ?? 0;
   const responseTime = site.health.response_time_ms;
   const statusConf = STATUS_CONFIG[site.health.status] || STATUS_CONFIG.error;
@@ -146,6 +282,9 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
               </div>
             </div>
           )}
+
+          {/* Clutter analysis */}
+          <ClutterAnalysis site={site} />
 
           {/* Geo info */}
           {site.geo && (

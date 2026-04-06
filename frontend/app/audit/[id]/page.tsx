@@ -30,6 +30,7 @@ const TABS = [
   'Ad-Tech',
   'Geo',
   'Journal',
+  'Methodologie',
 ] as const;
 
 type TabName = (typeof TABS)[number];
@@ -314,7 +315,7 @@ export default function AuditResultPage() {
                   : '#EF4444'
               : '#64748b'
           }
-          subtitle="Attention score"
+          subtitle="Score d'encombrement"
         />
       </div>
 
@@ -372,6 +373,8 @@ export default function AuditResultPage() {
         <ServerMap data={geoData} />
       ) : currentTab === 'Journal' ? (
         <JournalPanel logs={auditLogs} />
+      ) : currentTab === 'Methodologie' ? (
+        <MethodologyPanel />
       ) : (
         <SiteTable sites={filteredSites} onDomainClick={setSelectedDomain} />
       )}
@@ -421,6 +424,92 @@ function PageHeader({
         )}
       </div>
     </div>
+  );
+}
+
+function MethodologyPanel() {
+  const scoreRanges = [
+    { range: '9 – 10', label: 'Page clean', desc: 'Experience premium, publicite minimale', color: '#4edea3' },
+    { range: '7 – 8', label: 'Acceptable', desc: 'Standard editeur, encombrement modere', color: '#4edea3' },
+    { range: '5 – 6', label: 'Page chargee', desc: 'Attention reduite, pression publicitaire notable', color: '#F97316' },
+    { range: '3 – 4', label: 'Forte pression', desc: 'Experience degradee, risque MFA', color: '#EF4444' },
+    { range: '0 – 2', label: 'MFA', desc: 'Made For Advertising — a supprimer', color: '#EF4444' },
+  ];
+
+  return (
+    <Card>
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-base font-semibold text-on-surface mb-3">
+            Score d&apos;Encombrement Visuel — Methodologie
+          </h3>
+          <p className="text-sm text-muted leading-relaxed">
+            Le score MLI mesure l&apos;encombrement publicitaire d&apos;une page web
+            tel qu&apos;il est percu par un utilisateur reel. Au lieu de simplement
+            compter les publicites, nous mesurons la proportion de l&apos;ecran
+            occupee par des elements publicitaires a trois moments cles de
+            la navigation.
+          </p>
+        </div>
+
+        {/* 3 positions diagram */}
+        <div>
+          <h4 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-3">
+            3 captures a 3 positions
+          </h4>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { name: 'ATF', pct: '0%', weight: '50%', desc: 'Premiere impression' },
+              { name: 'Mid-scroll', pct: '50%', weight: '30%', desc: 'Navigation courante' },
+              { name: 'Deep', pct: '80%', weight: '20%', desc: 'Bas de page' },
+            ].map((pos) => (
+              <div key={pos.name} className="bg-surface-mid rounded-lg p-3 border border-outline/10 text-center">
+                <div className="font-mono text-xs font-bold text-on-surface">{pos.name}</div>
+                <div className="font-mono text-[10px] text-dim mt-1">scroll {pos.pct}</div>
+                <div className="font-mono text-sm font-bold text-primary mt-2">×{pos.weight}</div>
+                <div className="text-[10px] text-muted mt-1">{pos.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Formula */}
+        <div className="bg-surface-deepest rounded-lg p-4 border border-outline/10">
+          <div className="font-mono text-xs text-primary mb-2">Formule</div>
+          <div className="font-mono text-sm text-on-surface">
+            Score = 10 × (1 - (ratio_ATF × 0.5 + ratio_Mid × 0.3 + ratio_Deep × 0.2))
+          </div>
+          <p className="text-[11px] text-muted mt-2 leading-relaxed">
+            Un ratio de 15% en ATF signifie que 15% de ce que l&apos;utilisateur
+            voit en premier est de la publicite. L&apos;ATF est pondere a 50% car
+            c&apos;est la premiere impression qui determine si l&apos;utilisateur reste.
+          </p>
+        </div>
+
+        {/* Score table */}
+        <div>
+          <h4 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-3">
+            Grille d&apos;interpretation
+          </h4>
+          <div className="space-y-1">
+            {scoreRanges.map((row) => (
+              <div
+                key={row.range}
+                className="flex items-center gap-3 bg-surface-mid/30 rounded-lg px-3 py-2 border border-outline/5"
+              >
+                <span className="font-mono text-sm font-bold w-14" style={{ color: row.color }}>
+                  {row.range}
+                </span>
+                <span className="font-mono text-xs font-medium text-on-surface w-28">
+                  {row.label}
+                </span>
+                <span className="text-xs text-muted">{row.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 

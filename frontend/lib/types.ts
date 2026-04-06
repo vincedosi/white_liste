@@ -61,11 +61,43 @@ export interface AttentionBreakdown {
   ads_sticky: number;
 }
 
+export interface ClutterZone {
+  ad_ratio: number;
+  content_ratio: number;
+  ads_visible: number;
+  viewport_area: number;
+  ads_detail: Array<{
+    width: number;
+    height: number;
+    visibleArea: number;
+    isSticky: boolean;
+    tag: string;
+  }>;
+}
+
+export interface ClutterDetail {
+  atf: ClutterZone;
+  mid: ClutterZone;
+  deep: ClutterZone;
+  weighted_ratio: number;
+  formula: string;
+}
+
+export interface PageProfile {
+  total_ad_surface_pct: number;
+  total_content_pct: number;
+  total_nav_pct: number;
+  total_empty_pct: number;
+}
+
 export interface AttentionResult {
   domain: string;
   score: number;
+  clutter_score: number;
   raw_ad_count: number;
   breakdown: AttentionBreakdown;
+  clutter_detail?: ClutterDetail;
+  page_profile?: PageProfile;
 }
 
 export interface AdsTxtResult {

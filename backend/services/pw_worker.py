@@ -937,6 +937,176 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
     return round(score, 1), breakdown, detection_method
 
 
+CLUTTER_MEASURE_JS = """
+() => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const viewportArea = vw * vh;
+    const viewportTop = window.scrollY;
+
+    const adElements = new Set();
+
+    // A. Known ad selectors
+    const adSelectors = [
+        'div[id^="div-gpt-ad"]', 'div[id^="google_ads_iframe"]',
+        'ins.adsbygoogle', 'div[data-google-query-id]',
+        'iframe[src*="doubleclick"]', 'iframe[src*="googlesyndication"]',
+        'iframe[src*="safeframe"]', 'iframe[src*="amazon-adsystem"]',
+        'div[id*="taboola"]', 'div[id*="outbrain"]',
+        'div[class*="teads"]', 'div[data-criteo-id]',
+        'div[class*="ad-container"]', 'div[class*="ad-slot"]',
+        'div[class*="ad-wrapper"]', 'div[class*="advertisement"]',
+        'div[class*="pub-container"]', 'div[class*="sponsor"]',
+    ];
+    adSelectors.forEach(sel => {
+        try { document.querySelectorAll(sel).forEach(el => adElements.add(el)); } catch(e) {}
+    });
+
+    // B. Cross-origin iframes
+    const siteDomain = location.hostname.replace(/^www\\./, '');
+    document.querySelectorAll('iframe[src]').forEach(iframe => {
+        try {
+            const src = new URL(iframe.src);
+            const iframeDomain = src.hostname.replace(/^www\\./, '');
+            if (iframeDomain !== siteDomain && !iframeDomain.endsWith('.' + siteDomain)) {
+                adElements.add(iframe);
+            }
+        } catch(e) {}
+    });
+
+    // C. GPT slots
+    try {
+        if (window.googletag && googletag.pubads) {
+            googletag.pubads().getSlots().forEach(slot => {
+                const el = document.getElementById(slot.getSlotElementId());
+                if (el) adElements.add(el);
+            });
+        }
+    } catch(e) {}
+
+    // D. Elements already highlighted by MLI detection
+    document.querySelectorAll('.mli-ad-highlight').forEach(el => adElements.add(el));
+
+    // Compute visible ad surface in current viewport
+    let adSurfaceInViewport = 0;
+    const adsInViewport = [];
+
+    adElements.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 10 || rect.height < 10) return;
+
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return;
+
+        const visibleTop = Math.max(rect.top, 0);
+        const visibleBottom = Math.min(rect.bottom, vh);
+        const visibleLeft = Math.max(rect.left, 0);
+        const visibleRight = Math.min(rect.right, vw);
+
+        if (visibleTop < visibleBottom && visibleLeft < visibleRight) {
+            const visibleArea = (visibleRight - visibleLeft) * (visibleBottom - visibleTop);
+            adSurfaceInViewport += visibleArea;
+
+            adsInViewport.push({
+                width: Math.round(rect.width),
+                height: Math.round(rect.height),
+                visibleArea: Math.round(visibleArea),
+                y: Math.round(rect.top + viewportTop),
+                isSticky: style.position === 'fixed' || style.position === 'sticky',
+                tag: el.tagName.toLowerCase(),
+            });
+        }
+    });
+
+    // Compute editorial content surface
+    let contentArea = 0;
+    document.querySelectorAll('article, main, [role="main"], .content, .article-body, .post-content, .entry-content').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const visibleTop = Math.max(rect.top, 0);
+        const visibleBottom = Math.min(rect.bottom, vh);
+        const visibleLeft = Math.max(rect.left, 0);
+        const visibleRight = Math.min(rect.right, vw);
+        if (visibleTop < visibleBottom && visibleLeft < visibleRight) {
+            contentArea += (visibleRight - visibleLeft) * (visibleBottom - visibleTop);
+        }
+    });
+
+    const adRatio = adSurfaceInViewport / viewportArea;
+    const contentRatio = Math.min(contentArea / viewportArea, 1.0);
+
+    return {
+        viewport_area: viewportArea,
+        ad_surface: Math.round(adSurfaceInViewport),
+        ad_ratio: Math.round(adRatio * 1000) / 1000,
+        content_surface: Math.round(contentArea),
+        content_ratio: Math.round(contentRatio * 1000) / 1000,
+        ads_visible: adsInViewport.length,
+        ads_detail: adsInViewport,
+        scroll_y: viewportTop,
+    };
+}
+"""
+
+
+def compute_clutter_score(page) -> tuple[float, dict, dict]:
+    """Measure visual ad clutter at 3 scroll positions.
+    Returns: (clutter_score, clutter_detail, page_profile)
+    """
+    positions = [
+        ("atf", 0),        # Above the fold
+        ("mid", 0.5),      # Mid-page (50%)
+        ("deep", 0.8),     # Deep (80%)
+    ]
+    captures = {}
+
+    for name, scroll_pct in positions:
+        if scroll_pct == 0:
+            page.evaluate("window.scrollTo(0, 0)")
+        else:
+            page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {scroll_pct})")
+        page.wait_for_timeout(1000)
+        result = page.evaluate(CLUTTER_MEASURE_JS)
+        captures[name] = result
+
+    # Weighted score: ATF 50%, Mid 30%, Deep 20%
+    atf_ratio = captures["atf"]["ad_ratio"]
+    mid_ratio = captures["mid"]["ad_ratio"]
+    deep_ratio = captures["deep"]["ad_ratio"]
+
+    weighted_ratio = atf_ratio * 0.5 + mid_ratio * 0.3 + deep_ratio * 0.2
+    clutter_score = 10 * (1 - weighted_ratio)
+    clutter_score = max(0.0, min(10.0, round(clutter_score, 1)))
+
+    # Build formula string
+    formula = (
+        f"10 × (1 - ({atf_ratio}×0.5 + {mid_ratio}×0.3 + {deep_ratio}×0.2)) = {clutter_score}"
+    )
+
+    clutter_detail = {
+        "atf": captures["atf"],
+        "mid": captures["mid"],
+        "deep": captures["deep"],
+        "weighted_ratio": round(weighted_ratio, 3),
+        "formula": formula,
+    }
+
+    # Page profile: average across 3 captures
+    avg_ad_pct = round(
+        (atf_ratio + mid_ratio + deep_ratio) / 3 * 100
+    )
+    avg_content_pct = round(
+        (captures["atf"]["content_ratio"] + captures["mid"]["content_ratio"] + captures["deep"]["content_ratio"]) / 3 * 100
+    )
+    page_profile = {
+        "total_ad_surface_pct": avg_ad_pct,
+        "total_content_pct": avg_content_pct,
+        "total_nav_pct": max(0, 100 - avg_ad_pct - avg_content_pct - 10),
+        "total_empty_pct": 10,  # estimated
+    }
+
+    return clutter_score, clutter_detail, page_profile
+
+
 def score_attention(page, domain: str) -> dict:
     """Charge une page avec interception reseau + detection DOM multi-couche.
     Consent cookies are pre-injected on the context before this call.
@@ -1001,8 +1171,17 @@ def score_attention(page, domain: str) -> dict:
         visual_hit_count = net_stats.get("ad_visual_requests", 0)
         print(f"  [{domain}] Network: {ad_hit_count} ad reqs, {visual_hit_count} visual | DOM: {len(ads)} elements", file=sys.stderr, flush=True)
 
-        # 15. Score v4 (DOM + network combined)
+        # 15. Score v4 (DOM + network combined) — kept for retrocompat
         score, breakdown, detection_method = compute_score_v4(ads, adtech, net_stats)
+
+        # 16. NEW: Clutter score (viewport surface ratio measurement)
+        try:
+            clutter_score, clutter_detail, page_profile = compute_clutter_score(page)
+        except Exception as e:
+            print(f"  [{domain}] clutter score failed: {e}", file=sys.stderr, flush=True)
+            clutter_score = score  # fallback to v4 score
+            clutter_detail = {}
+            page_profile = {}
 
         # ad_count: DOM elements if found, else estimate from unique ad domains
         net_ad_domain_count = len(net_stats.get("ad_domains", []))
@@ -1014,9 +1193,13 @@ def score_attention(page, domain: str) -> dict:
 
         return {
             "ad_count": effective_ad_count,
-            "score": score,
-            "is_mfa": score < MFA_THRESHOLD,
-            "details": breakdown,
+            "score": clutter_score,                # NEW: clutter score is primary
+            "clutter_score": clutter_score,         # NEW: explicit field
+            "attention_score": clutter_score,        # retrocompat alias
+            "is_mfa": clutter_score < 4.0,          # MFA threshold on clutter
+            "clutter_detail": clutter_detail,        # NEW: per-zone surface ratios
+            "page_profile": page_profile,            # NEW: page composition
+            "details": breakdown,                    # kept for retrocompat
             "ads_above_fold": breakdown["above_fold"],
             "ads_mid_page": breakdown["mid_page"],
             "ads_deep": breakdown["deep"],
@@ -1117,12 +1300,23 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         trackers = detect_trackers(page)
         net_stats = compute_network_stats(intercepted)
         score, breakdown, _ = compute_score_v4(ads, adtech, net_stats)
+
+        # Clutter score (viewport surface ratio)
+        try:
+            clutter_score, clutter_detail, page_profile = compute_clutter_score(page)
+        except Exception:
+            clutter_score, clutter_detail, page_profile = score, {}, {}
+
         # ad_count: DOM elements if found, else estimate from unique ad domains
         net_ad_domain_count = len(net_stats.get("ad_domains", []))
         net_estimated = max(net_ad_domain_count // 2, 1) if net_ad_domain_count > 0 else 0
         effective_ad_count = len(ads) if len(ads) > 0 else net_estimated
 
-        # MLI banner
+        # MLI banner — scroll back to top first
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(500)
+
+        atf_pct = round(clutter_detail.get("atf", {}).get("ad_ratio", 0) * 100)
         banner_js = """
         (info) => {
             const banner = document.createElement('div');
@@ -1138,9 +1332,8 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
                 <span style="font-weight:700;font-size:14px;">MLI <span style="color:#10B981">Intelligence</span></span>
                 <span>
                     ${info.domain} —
-                    Score: <b style="color:${info.score >= 7 ? '#10B981' : info.score >= 4 ? '#F97316' : '#EF4444'}">${info.score}/10</b> —
-                    ${info.total} pub(s) :
-                    ATF ${info.atf} · Mid ${info.mid} · Deep ${info.deep} · Footer ${info.footer} · Sticky ${info.sticky}
+                    Encombrement: <b style="color:${info.score >= 7 ? '#10B981' : info.score >= 4 ? '#F97316' : '#EF4444'}">${info.score}/10</b> —
+                    ATF ${info.atf_pct}% pub · ${info.total} element(s)
                 </span>
             `;
             document.body.prepend(banner);
@@ -1148,10 +1341,8 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         }
         """
         page.evaluate(banner_js, {
-            "domain": domain, "score": score, "total": effective_ad_count,
-            "atf": breakdown["above_fold"], "mid": breakdown["mid_page"],
-            "deep": breakdown["deep"], "footer": breakdown["footer"],
-            "sticky": breakdown["sticky"],
+            "domain": domain, "score": clutter_score,
+            "total": effective_ad_count, "atf_pct": atf_pct,
         })
 
         # Screenshots
@@ -1170,7 +1361,10 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
             "viewport_path": viewport_path,
             "fullpage_path": fullpage_path,
             "ad_count": effective_ad_count,
-            "score": score,
+            "score": clutter_score,
+            "clutter_score": clutter_score,
+            "clutter_detail": clutter_detail,
+            "page_profile": page_profile,
             "breakdown": breakdown,
             "cookie_dismissed": cookie_dismissed,
             "adtech": adtech,
