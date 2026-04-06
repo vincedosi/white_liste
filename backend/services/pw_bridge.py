@@ -1,12 +1,15 @@
 """
-MLI — Playwright Bridge v3
+MLI — Playwright Bridge v4
 Lance pw_worker.py dans un subprocess separe pour eviter
 les conflits event loop Streamlit/Windows.
+Lit stderr en temps reel pour streamer les logs au frontend.
 """
 from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Allow imports from backend package
@@ -16,36 +19,79 @@ from models import AttentionResult
 
 WORKER_PATH = Path(__file__).parent / "pw_worker.py"
 
+# Thread-safe log buffer — populated by stderr reader, consumed by audit.py heartbeat
+_current_logs: list[str] = []
+_logs_lock = threading.Lock()
+
+
+def get_and_clear_logs() -> list[str]:
+    """Retrieve and clear buffered stderr logs (thread-safe)."""
+    with _logs_lock:
+        logs = _current_logs.copy()
+        _current_logs.clear()
+        return logs
+
+
+def _read_stderr(stream):
+    """Background thread: read stderr lines into shared buffer."""
+    for raw_line in iter(stream.readline, ""):
+        line = raw_line.rstrip("\n").rstrip("\r")
+        if line:
+            with _logs_lock:
+                _current_logs.append(line)
+    stream.close()
+
 
 def run_playwright_worker(
     domains: list[str],
     mode: str = "attention",
     output_dir: str = "./output/screenshots",
 ) -> dict:
-    """Lance le worker Playwright dans un process separe."""
+    """Lance le worker Playwright dans un process separe avec lecture live de stderr."""
     request = json.dumps({
         "domains": domains,
         "mode": mode,
         "output_dir": output_dir,
     })
 
-    result = subprocess.run(
+    timeout_s = len(domains) * 45 + 120
+
+    proc = subprocess.Popen(
         [sys.executable, str(WORKER_PATH)],
-        input=request,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=len(domains) * 30 + 60,
     )
 
-    if result.stderr:
-        for line in result.stderr.strip().splitlines():
-            print(f"  {line}")
+    # Start background stderr reader
+    stderr_thread = threading.Thread(target=_read_stderr, args=(proc.stderr,), daemon=True)
+    stderr_thread.start()
 
-    if result.returncode != 0:
-        error_msg = result.stderr[:500] if result.stderr else "Unknown error"
-        raise RuntimeError(f"Playwright worker failed: {error_msg}")
+    # Send request to stdin
+    proc.stdin.write(request)
+    proc.stdin.close()
 
-    return json.loads(result.stdout)
+    # Wait for process with timeout
+    try:
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise RuntimeError(f"Playwright worker timeout after {timeout_s}s")
+
+    # Wait for stderr thread to finish reading
+    stderr_thread.join(timeout=5)
+
+    stdout = proc.stdout.read()
+    proc.stdout.close()
+
+    if proc.returncode != 0:
+        remaining = get_and_clear_logs()
+        error_msg = "\n".join(remaining[-10:]) if remaining else "Unknown error"
+        raise RuntimeError(f"Playwright worker failed (rc={proc.returncode}): {error_msg}")
+
+    return json.loads(stdout)
 
 
 def score_all_subprocess(

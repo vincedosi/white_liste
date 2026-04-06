@@ -62,11 +62,11 @@ function latLonToXY(lat: number, lon: number, width: number, height: number) {
 }
 
 function getDotColor(action?: string): string {
-  if (!action) return '#4edea3';
+  if (!action) return '#22C55E';
   switch (action) {
     case 'remove': return '#EF4444';
     case 'flag': return '#F97316';
-    default: return '#4edea3';
+    default: return '#22C55E';
   }
 }
 
@@ -100,7 +100,6 @@ export function ServerMap({ data }: ServerMapProps) {
   const MAP_W = 800;
   const MAP_H = 400;
 
-  /* Group by country code → aggregate dots (offset slightly if same country) */
   const dots = useMemo(() => {
     const result: Array<{
       x: number;
@@ -110,7 +109,6 @@ export function ServerMap({ data }: ServerMapProps) {
       loc: ServerLocation;
     }> = [];
 
-    // Track count per country code for offset
     const countByCC: Record<string, number> = {};
 
     for (const loc of data) {
@@ -154,14 +152,13 @@ export function ServerMap({ data }: ServerMapProps) {
 
   const handleMouseLeave = () => setTooltip(null);
 
-  /* Grid lines */
   const latLines = [-60, -30, 0, 30, 60];
   const lonLines = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
 
   return (
     <Card className="p-0 overflow-hidden">
       <div className="px-5 pt-5 pb-3">
-        <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim">
+        <h3 className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim">
           Localisation des serveurs
         </h3>
       </div>
@@ -171,8 +168,11 @@ export function ServerMap({ data }: ServerMapProps) {
           ref={svgRef}
           viewBox={`0 0 ${MAP_W} ${MAP_H}`}
           className="w-full h-auto"
-          style={{ background: '#090e17' }}
+          style={{ background: '#DBEAFE' }}
         >
+          {/* Land background */}
+          <rect width={MAP_W} height={MAP_H} fill="#DBEAFE" />
+
           {/* Grid lines — longitude */}
           {lonLines.map((lon) => {
             const { x } = latLonToXY(0, lon, MAP_W, MAP_H);
@@ -183,8 +183,8 @@ export function ServerMap({ data }: ServerMapProps) {
                 y1={0}
                 x2={x}
                 y2={MAP_H}
-                stroke="#3c4a42"
-                strokeOpacity={0.12}
+                stroke="#93C5FD"
+                strokeOpacity={0.3}
                 strokeWidth={0.5}
               />
             );
@@ -200,8 +200,8 @@ export function ServerMap({ data }: ServerMapProps) {
                 y1={y}
                 x2={MAP_W}
                 y2={y}
-                stroke="#3c4a42"
-                strokeOpacity={0.12}
+                stroke="#93C5FD"
+                strokeOpacity={0.3}
                 strokeWidth={0.5}
               />
             );
@@ -213,8 +213,8 @@ export function ServerMap({ data }: ServerMapProps) {
             y1={MAP_H / 2}
             x2={MAP_W}
             y2={MAP_H / 2}
-            stroke="#3c4a42"
-            strokeOpacity={0.25}
+            stroke="#60A5FA"
+            strokeOpacity={0.3}
             strokeWidth={0.5}
             strokeDasharray="4,4"
           />
@@ -225,8 +225,8 @@ export function ServerMap({ data }: ServerMapProps) {
             y1={0}
             x2={MAP_W / 2}
             y2={MAP_H}
-            stroke="#3c4a42"
-            strokeOpacity={0.25}
+            stroke="#60A5FA"
+            strokeOpacity={0.3}
             strokeWidth={0.5}
             strokeDasharray="4,4"
           />
@@ -239,7 +239,7 @@ export function ServerMap({ data }: ServerMapProps) {
               cy={dot.y}
               r={dot.size + 4}
               fill={dot.color}
-              opacity={0.15}
+              opacity={0.2}
             />
           ))}
 
@@ -252,9 +252,9 @@ export function ServerMap({ data }: ServerMapProps) {
               r={dot.size}
               fill={dot.color}
               opacity={0.9}
-              stroke={dot.color}
-              strokeWidth={1}
-              strokeOpacity={0.4}
+              stroke="white"
+              strokeWidth={1.5}
+              strokeOpacity={0.8}
               className="cursor-pointer transition-all duration-150"
               onMouseEnter={(e) => handleMouseEnter(e, dot.loc, dot.x, dot.y)}
               onMouseLeave={handleMouseLeave}
@@ -272,7 +272,7 @@ export function ServerMap({ data }: ServerMapProps) {
               transform: 'translate(-50%, -120%)',
             }}
           >
-            <div className="bg-surface-high border border-outline/30 rounded-lg px-3 py-2.5 shadow-xl min-w-[180px]">
+            <div className="bg-white border border-outline rounded-lg px-3 py-2.5 shadow-lg min-w-[180px]">
               <p className="font-mono text-xs text-primary font-semibold mb-1">
                 {tooltip.domain}
               </p>
@@ -293,18 +293,18 @@ export function ServerMap({ data }: ServerMapProps) {
         )}
 
         {/* Legend */}
-        <div className="absolute bottom-3 right-4 flex items-center gap-4">
+        <div className="absolute bottom-3 right-4 flex items-center gap-4 bg-white/80 backdrop-blur-sm rounded-lg px-3 py-1.5">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-primary" />
-            <span className="font-mono text-[9px] text-dim">Conserver</span>
+            <div className="w-2 h-2 rounded-full bg-success" />
+            <span className="font-mono text-[9px] text-muted">Conserver</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-warning" />
-            <span className="font-mono text-[9px] text-dim">Surveiller</span>
+            <span className="font-mono text-[9px] text-muted">Surveiller</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-danger" />
-            <span className="font-mono text-[9px] text-dim">Supprimer</span>
+            <span className="font-mono text-[9px] text-muted">Supprimer</span>
           </div>
         </div>
       </div>
@@ -320,7 +320,7 @@ export function ServerMap({ data }: ServerMapProps) {
 
       {/* Summary table below map */}
       {data.length > 0 && (
-        <div className="overflow-x-auto border-t border-outline/10">
+        <div className="overflow-x-auto border-t border-outline">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-surface-high">
@@ -342,7 +342,7 @@ export function ServerMap({ data }: ServerMapProps) {
               {data.map((row) => (
                 <tr
                   key={row.domain}
-                  className="border-t border-outline/10 bg-surface-low hover:bg-surface-mid transition-colors"
+                  className="border-t border-outline-light bg-white hover:bg-surface-mid transition-colors"
                 >
                   <td className="px-4 py-2.5 font-mono text-sm text-primary">{row.domain}</td>
                   <td className="px-3 py-2.5 font-mono text-sm text-on-surface">{row.country}</td>

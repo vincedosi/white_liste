@@ -70,10 +70,10 @@ function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-surface-low border border-outline/20 rounded-xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="bg-white border border-outline rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
         <div className="flex items-center gap-3 mb-4">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-danger/10 border border-danger/20">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-danger-light border border-danger/20">
             <AlertTriangle size={18} className="text-danger" />
           </div>
           <div>
@@ -100,8 +100,8 @@ function ConfirmDialog({
             disabled={loading}
             className={clsx(
               'flex-1 h-8 px-3 text-xs font-medium tracking-wide uppercase rounded-lg',
-              'bg-danger/15 text-danger border border-danger/20',
-              'hover:bg-danger/25 transition-all',
+              'bg-danger-light text-danger border border-danger/20',
+              'hover:bg-danger/10 transition-all',
               'disabled:opacity-40 disabled:pointer-events-none',
             )}
           >
@@ -136,7 +136,6 @@ export default function HistoryPage() {
     setError(null);
     try {
       const data = await getAudits();
-      // Sort by date descending
       data.sort(
         (a, b) =>
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -188,7 +187,6 @@ export default function HistoryPage() {
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result as string);
-        // If the JSON has an id, navigate to it
         if (data?.id) {
           router.push(`/audit/${data.id}`);
         }
@@ -198,7 +196,6 @@ export default function HistoryPage() {
     };
     reader.readAsText(file);
 
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -209,10 +206,10 @@ export default function HistoryPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 border border-primary/20">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-50 border border-primary/20">
                 <Clock size={16} className="text-primary" />
               </div>
-              <h1 className="text-2xl font-sans font-bold tracking-tight text-on-surface">
+              <h1 className="text-2xl font-sans font-extrabold tracking-tight text-on-surface">
                 Historique des audits
               </h1>
             </div>
@@ -278,7 +275,7 @@ export default function HistoryPage() {
       {/* Error state */}
       {!loading && error && (
         <Card className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-danger/10 mb-5">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-danger-light mb-5">
             <AlertTriangle size={24} className="text-danger" />
           </div>
           <h2 className="text-base font-semibold text-on-surface mb-1.5">
@@ -294,7 +291,7 @@ export default function HistoryPage() {
       {/* Empty state */}
       {!loading && !error && filtered.length === 0 && (
         <Card className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-surface-high/60 mb-5">
+          <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-surface-high mb-5">
             <Inbox size={24} className="text-dim" />
           </div>
           <h2 className="text-base font-semibold text-on-surface mb-1.5">
@@ -336,7 +333,7 @@ export default function HistoryPage() {
             >
               <div className="flex items-center gap-4 p-4 lg:p-5">
                 {/* Icon */}
-                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-surface-high flex-shrink-0">
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary-50 flex-shrink-0">
                   <BarChart3 size={18} className="text-primary" />
                 </div>
 
@@ -370,7 +367,7 @@ export default function HistoryPage() {
                     }}
                     className={clsx(
                       'flex items-center justify-center w-8 h-8 rounded-lg',
-                      'text-dim hover:text-danger hover:bg-danger/10',
+                      'text-dim hover:text-danger hover:bg-danger-light',
                       'transition-all opacity-0 group-hover:opacity-100',
                     )}
                     title="Supprimer"
@@ -381,7 +378,7 @@ export default function HistoryPage() {
                     onClick={() => router.push(`/audit/${audit.id}`)}
                     className={clsx(
                       'flex items-center justify-center w-8 h-8 rounded-lg',
-                      'text-dim hover:text-primary hover:bg-primary/10',
+                      'text-dim hover:text-primary hover:bg-primary-50',
                       'transition-all',
                     )}
                     title="Voir"

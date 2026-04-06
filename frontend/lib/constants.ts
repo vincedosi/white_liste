@@ -4,32 +4,36 @@
 
 /** Core palette — matches tailwind.config.js */
 export const COLORS = {
-  background: '#0e141d',
+  background: '#F8FAFC',
   surface: {
-    DEFAULT: '#0e141d',
-    low: '#161c25',
-    mid: '#1a2029',
-    high: '#252a34',
-    deepest: '#090e17',
+    DEFAULT: '#FFFFFF',
+    low: '#FFFFFF',
+    mid: '#F8FAFF',
+    high: '#F1F5F9',
+    deepest: '#E8ECF4',
   },
-  primary: '#4edea3',
-  primaryDim: '#10B981',
-  onSurface: '#dee2f0',
-  muted: '#94a3b8',
-  dim: '#64748b',
-  outline: '#3c4a42',
+  primary: '#2563EB',
+  primaryDim: '#1D4ED8',
+  primaryLight: '#3B82F6',
+  primaryLighter: '#60A5FA',
+  accent: '#0EA5E9',
+  onSurface: '#0F172A',
+  muted: '#64748B',
+  dim: '#94A3B8',
+  outline: '#E2E8F0',
   danger: '#EF4444',
-  warning: '#F97316',
-  info: '#818CF8',
+  warning: '#F59E0B',
+  info: '#6366F1',
+  success: '#10B981',
 } as const;
 
 /** Zone colors for attention score charts */
 export const ZONE_COLORS = {
-  above_fold: '#4edea3',   // primary — highest impact
-  mid_page: '#10B981',     // primary dim
-  deep: '#818CF8',         // info — lower impact
-  footer: '#64748b',       // dim — minimal impact
-  sticky: '#F97316',       // warning — intrusive
+  above_fold: '#EF4444',
+  mid_page: '#F97316',
+  deep: '#EAB308',
+  footer: '#CBD5E1',
+  sticky: '#8B5CF6',
 } as const;
 
 /** Zone labels (French) */
@@ -43,7 +47,7 @@ export const ZONE_LABELS: Record<string, string> = {
 
 /** Status display config */
 export const STATUS_CONFIG = {
-  ok: { label: 'OK', color: COLORS.primary },
+  ok: { label: 'OK', color: COLORS.success },
   dead: { label: 'Dead', color: COLORS.danger },
   redirect: { label: 'Redirect', color: COLORS.warning },
   timeout: { label: 'Timeout', color: COLORS.warning },
@@ -52,7 +56,7 @@ export const STATUS_CONFIG = {
 
 /** Brand safety display config */
 export const BRAND_SAFETY_CONFIG = {
-  safe: { label: 'Safe', color: COLORS.primary },
+  safe: { label: 'Safe', color: COLORS.success },
   moderate: { label: 'Moderate', color: COLORS.warning },
   unsafe: { label: 'Unsafe', color: COLORS.danger },
 } as const;

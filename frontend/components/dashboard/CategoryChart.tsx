@@ -26,7 +26,7 @@ function CustomTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-surface-high border border-outline/30 rounded-lg px-3 py-2 shadow-xl">
+    <div className="bg-white border border-outline rounded-lg px-3 py-2 shadow-lg">
       <p className="font-mono text-xs text-on-surface mb-0.5">{label}</p>
       <p className="font-mono text-xs font-bold text-primary">
         {payload[0].value} site{payload[0].value > 1 ? 's' : ''}
@@ -48,7 +48,7 @@ export function CategoryChart({ data }: CategoryChartProps) {
   if (chartData.length === 0) {
     return (
       <Card>
-        <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-4">
+        <h3 className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim mb-4">
           Categories IAB
         </h3>
         <div className="flex items-center justify-center py-10">
@@ -62,7 +62,7 @@ export function CategoryChart({ data }: CategoryChartProps) {
 
   return (
     <Card>
-      <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-4">
+      <h3 className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim mb-4">
         Categories IAB
       </h3>
       <div
@@ -78,7 +78,7 @@ export function CategoryChart({ data }: CategoryChartProps) {
             <XAxis
               type="number"
               tick={{
-                fill: '#64748b',
+                fill: '#94A3B8',
                 fontSize: 11,
                 fontFamily: 'JetBrains Mono, monospace',
               }}
@@ -91,7 +91,7 @@ export function CategoryChart({ data }: CategoryChartProps) {
               dataKey="name"
               width={160}
               tick={{
-                fill: '#94a3b8',
+                fill: '#475569',
                 fontSize: 11,
                 fontFamily: 'JetBrains Mono, monospace',
               }}
@@ -100,11 +100,11 @@ export function CategoryChart({ data }: CategoryChartProps) {
             />
             <Tooltip
               content={<CustomTooltip />}
-              cursor={{ fill: 'rgba(78,222,163,0.04)' }}
+              cursor={{ fill: 'rgba(59,130,246,0.04)' }}
             />
             <Bar
               dataKey="count"
-              fill="#4edea3"
+              fill="#3B82F6"
               radius={[0, 4, 4, 0]}
               barSize={18}
             />

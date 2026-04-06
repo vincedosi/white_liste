@@ -26,6 +26,8 @@ async def check_site(
     url = f"https://{domain}"
 
     for attempt in range(HTTP_RETRIES + 1):
+        if attempt > 0:
+            print(f"  [health] {domain} retry {attempt}/{HTTP_RETRIES}...", flush=True)
         try:
             async with semaphore:
                 start = time.monotonic()
@@ -49,17 +51,22 @@ async def check_site(
             )
 
         except httpx.TimeoutException:
+            print(f"  [health] {domain} timeout (attempt {attempt+1})", flush=True)
             if attempt == HTTP_RETRIES:
                 return HealthResult(status=SiteStatus.TIMEOUT, error_message="Timeout after retries")
         except httpx.ConnectError as e:
             error_msg = str(e).lower()
             if "name resolution" in error_msg or "dns" in error_msg or "getaddrinfo" in error_msg:
+                print(f"  [health] {domain} DNS error: {str(e)[:80]}", flush=True)
                 return HealthResult(status=SiteStatus.DNS_ERROR, error_message=str(e))
+            print(f"  [health] {domain} connect error (attempt {attempt+1}): {str(e)[:80]}", flush=True)
             if attempt == HTTP_RETRIES:
                 return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e))
         except httpx.HTTPError as e:
             if "ssl" in str(e).lower() or "certificate" in str(e).lower():
+                print(f"  [health] {domain} SSL error: {str(e)[:80]}", flush=True)
                 return HealthResult(status=SiteStatus.SSL_ERROR, error_message=str(e))
+            print(f"  [health] {domain} HTTP error (attempt {attempt+1}): {str(e)[:80]}", flush=True)
             if attempt == HTTP_RETRIES:
                 return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e))
 

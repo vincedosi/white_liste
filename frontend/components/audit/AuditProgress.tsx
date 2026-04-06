@@ -1,17 +1,15 @@
 'use client';
 
 import clsx from 'clsx';
-import { Card } from '@/components/ui/Card';
 import { AuditLog } from './AuditLog';
 
-/** Pipeline step definitions matching backend order */
 const PIPELINE_STEPS = [
   { key: 'health', label: 'Sante' },
   { key: 'attention', label: 'Attention' },
   { key: 'ads_txt', label: 'ads.txt' },
   { key: 'geo', label: 'Geo' },
   { key: 'categorization', label: 'IA' },
-  { key: 'screenshots', label: 'Screenshots' },
+  { key: 'screenshots', label: 'Captures' },
 ] as const;
 
 interface AuditProgressProps {
@@ -22,17 +20,13 @@ interface AuditProgressProps {
 }
 
 export function AuditProgress({ isRunning, currentStep, logs, error }: AuditProgressProps) {
-  // Determine step statuses
   const currentIndex = PIPELINE_STEPS.findIndex((s) => s.key === currentStep);
 
   return (
-    <Card className="mt-6 bg-surface-low">
-      {/* Step indicator bar */}
+    <div className="bg-white rounded-2xl border border-outline shadow-card p-5 mt-6">
+      {/* Step dots */}
       <div className="mb-5">
-        <h3 className="text-xs font-mono font-medium text-muted uppercase tracking-wider mb-4">
-          Progression
-        </h3>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {PIPELINE_STEPS.map((step, i) => {
             const isDone = currentIndex > i || (!isRunning && !error && currentIndex >= 0);
             const isActive = isRunning && currentIndex === i;
@@ -40,36 +34,27 @@ export function AuditProgress({ isRunning, currentStep, logs, error }: AuditProg
 
             return (
               <div key={step.key} className="flex items-center flex-1 min-w-0">
-                {/* Step node */}
                 <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-                  <div
-                    className={clsx(
-                      'w-3 h-3 rounded-full border-2 transition-all duration-300',
-                      isDone && 'bg-primary border-primary shadow-[0_0_8px_rgba(78,222,163,0.4)]',
-                      isActive && 'border-primary bg-primary/30 animate-pulse shadow-[0_0_12px_rgba(78,222,163,0.5)]',
-                      isPending && 'border-dim/40 bg-transparent',
-                    )}
-                  />
-                  <span
-                    className={clsx(
-                      'text-[10px] font-mono whitespace-nowrap transition-colors',
-                      isDone && 'text-primary',
-                      isActive && 'text-primary font-semibold',
-                      isPending && 'text-dim/60',
-                    )}
-                  >
+                  <div className={clsx(
+                    'w-2.5 h-2.5 rounded-full transition-all duration-300',
+                    isDone && 'bg-primary shadow-[0_0_6px_rgba(37,99,235,0.4)]',
+                    isActive && 'bg-accent animate-pulse shadow-[0_0_10px_rgba(14,165,233,0.5)]',
+                    isPending && 'bg-surface-deepest',
+                  )} />
+                  <span className={clsx(
+                    'text-[9px] font-mono whitespace-nowrap transition-colors uppercase tracking-wider',
+                    isDone && 'text-primary',
+                    isActive && 'text-accent font-semibold',
+                    isPending && 'text-dim/40',
+                  )}>
                     {step.label}
                   </span>
                 </div>
-
-                {/* Connector line (not after last) */}
                 {i < PIPELINE_STEPS.length - 1 && (
-                  <div
-                    className={clsx(
-                      'flex-1 h-px mx-1.5 transition-colors duration-300',
-                      isDone ? 'bg-primary/50' : 'bg-dim/20',
-                    )}
-                  />
+                  <div className={clsx(
+                    'flex-1 h-px mx-1 transition-colors duration-300',
+                    isDone ? 'bg-primary/30' : 'bg-surface-deepest',
+                  )} />
                 )}
               </div>
             );
@@ -77,15 +62,13 @@ export function AuditProgress({ isRunning, currentStep, logs, error }: AuditProg
         </div>
       </div>
 
-      {/* Error banner */}
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm font-mono">
+        <div className="mb-4 px-3 py-2.5 rounded-xl bg-danger-light border border-danger/15 text-danger text-xs font-mono">
           {error}
         </div>
       )}
 
-      {/* Terminal log viewer */}
       <AuditLog logs={logs} isRunning={isRunning} />
-    </Card>
+    </div>
   );
 }

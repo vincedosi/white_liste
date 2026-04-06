@@ -274,7 +274,7 @@ export default function AuditResultPage() {
         <KpiCard
           label="Sites audites"
           value={audit.summary.total}
-          color="#dee2f0"
+          color="#1D4ED8"
           subtitle={`Client: ${audit.client}`}
         />
         <KpiCard
@@ -293,7 +293,7 @@ export default function AuditResultPage() {
         <KpiCard
           label="Sites sains"
           value={healthCounts.healthy}
-          color="#4edea3"
+          color="#22C55E"
           delta={
             audit.summary.total > 0
               ? {
@@ -309,7 +309,7 @@ export default function AuditResultPage() {
           color={
             avgScore !== null
               ? avgScore >= 7
-                ? '#4edea3'
+                ? '#22C55E'
                 : avgScore >= 4
                   ? '#F97316'
                   : '#EF4444'
@@ -429,8 +429,8 @@ function PageHeader({
 
 function MethodologyPanel() {
   const scoreRanges = [
-    { range: '9 – 10', label: 'Page clean', desc: 'Experience premium, publicite minimale', color: '#4edea3' },
-    { range: '7 – 8', label: 'Acceptable', desc: 'Standard editeur, encombrement modere', color: '#4edea3' },
+    { range: '9 – 10', label: 'Page clean', desc: 'Experience premium, publicite minimale', color: '#22C55E' },
+    { range: '7 – 8', label: 'Acceptable', desc: 'Standard editeur, encombrement modere', color: '#22C55E' },
     { range: '5 – 6', label: 'Page chargee', desc: 'Attention reduite, pression publicitaire notable', color: '#F97316' },
     { range: '3 – 4', label: 'Forte pression', desc: 'Experience degradee, risque MFA', color: '#EF4444' },
     { range: '0 – 2', label: 'MFA', desc: 'Made For Advertising — a supprimer', color: '#EF4444' },

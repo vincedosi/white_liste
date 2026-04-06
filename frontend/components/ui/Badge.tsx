@@ -9,12 +9,12 @@ interface BadgeProps {
 }
 
 const VARIANT_STYLES: Record<BadgeVariant, string> = {
-  ok: 'bg-[rgba(78,222,163,0.12)] text-primary border-primary/20',
-  dead: 'bg-[rgba(239,68,68,0.12)] text-danger border-danger/20',
-  mfa: 'bg-[rgba(249,115,22,0.12)] text-warning border-warning/20',
-  flag: 'bg-[rgba(249,115,22,0.12)] text-warning border-warning/20',
-  present: 'bg-[rgba(78,222,163,0.12)] text-primary border-primary/20',
-  absent: 'bg-[rgba(100,116,139,0.12)] text-dim border-dim/20',
+  ok: 'bg-emerald-50 text-emerald-600 ring-emerald-200/60',
+  dead: 'bg-red-50 text-red-600 ring-red-200/60',
+  mfa: 'bg-amber-50 text-amber-600 ring-amber-200/60',
+  flag: 'bg-violet-50 text-violet-600 ring-violet-200/60',
+  present: 'bg-sky-50 text-sky-600 ring-sky-200/60',
+  absent: 'bg-slate-50 text-slate-400 ring-slate-200/60',
 };
 
 export function Badge({ variant, children, className }: BadgeProps) {
@@ -22,8 +22,8 @@ export function Badge({ variant, children, className }: BadgeProps) {
     <span
       className={clsx(
         'inline-flex items-center gap-1 px-2 py-0.5',
-        'text-[11px] font-mono font-medium leading-none',
-        'rounded border',
+        'text-[10px] font-mono font-semibold leading-none',
+        'rounded-md ring-1',
         'select-none whitespace-nowrap',
         VARIANT_STYLES[variant],
         className,

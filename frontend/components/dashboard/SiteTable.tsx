@@ -12,8 +12,8 @@ interface SiteTableProps {
 }
 
 function scoreColor(score: number | null): string {
-  if (score === null) return '#64748b';
-  if (score >= 7) return '#4edea3';
+  if (score === null) return '#94A3B8';
+  if (score >= 7) return '#22C55E';
   if (score >= 4) return '#F97316';
   return '#EF4444';
 }
@@ -60,13 +60,13 @@ export function SiteTable({ sites, onDomainClick }: SiteTableProps) {
               return (
                 <tr
                   key={site.domain}
-                  className="border-t border-outline/10 bg-surface-low hover:bg-surface-mid transition-colors"
+                  className="border-t border-outline-light bg-white hover:bg-surface-mid transition-colors"
                 >
                   <td className="px-4 py-2.5">
                     <button
                       type="button"
                       onClick={() => onDomainClick(site.domain)}
-                      className="font-mono text-sm text-primary hover:text-primary/80 hover:underline transition-colors text-left"
+                      className="font-mono text-sm text-primary hover:text-primary-dim hover:underline transition-colors text-left"
                     >
                       {site.domain}
                     </button>

@@ -85,10 +85,10 @@ Voir DESIGN.md et TODO.md pour les détails.
 ## Design
 
 **LIRE DESIGN.md AVANT TOUT CHANGEMENT D'INTERFACE.**
-Direction : "Dark Intelligence Dashboard" inspirée de Sequence.io.
-DARK MODE uniquement. Fond #060B14, accent teal #10B981.
+Direction : "Corporate Intelligence Dashboard" — light mode, bleu royal dominant.
+Fond #EEF2FF, accent bleu #1D4ED8, sidebar bleu nuit #1E2A4A.
 PAS de Streamlit brut — override CSS agressif de tout le theming.
-Typo : Inter + JetBrains Mono.
+Typo : Plus Jakarta Sans + JetBrains Mono.
 
 ## Fichiers de référence
 - **DESIGN.md** : Design system dark mode complet (LIRE EN PREMIER)

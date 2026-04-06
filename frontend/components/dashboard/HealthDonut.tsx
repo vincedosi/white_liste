@@ -11,8 +11,8 @@ interface HealthDonutProps {
 }
 
 const COLORS_MAP = {
-  Sains: '#4edea3',
-  Suspects: '#818CF8',
+  Sains: '#22C55E',
+  Suspects: '#6366F1',
   MFA: '#F97316',
   Dead: '#EF4444',
 };
@@ -21,7 +21,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
   if (!active || !payload?.length) return null;
   const item = payload[0];
   return (
-    <div className="bg-surface-high border border-outline/30 rounded-lg px-3 py-2 shadow-xl">
+    <div className="bg-white border border-outline rounded-lg px-3 py-2 shadow-lg">
       <p className="font-mono text-xs text-on-surface flex items-center gap-2">
         <span
           className="inline-block w-2 h-2 rounded-full"
@@ -62,7 +62,7 @@ export function HealthDonut({ healthy, flagged, mfa, dead }: HealthDonutProps) {
 
   return (
     <Card className="flex flex-col items-center">
-      <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-4 self-start">
+      <h3 className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim mb-4 self-start">
         Sante des sites
       </h3>
       <div className="w-full h-[250px] relative">
@@ -91,8 +91,8 @@ export function HealthDonut({ healthy, flagged, mfa, dead }: HealthDonutProps) {
         </ResponsiveContainer>
         {/* Center label */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ marginBottom: 30 }}>
-          <span className="font-sans font-bold text-2xl text-on-surface">{total}</span>
-          <span className="font-mono text-[10px] text-dim uppercase tracking-wider">Sites</span>
+          <span className="font-sans font-extrabold text-2xl text-on-surface">{total}</span>
+          <span className="font-sans text-[10px] font-medium text-dim uppercase tracking-wider">Sites</span>
         </div>
       </div>
     </Card>

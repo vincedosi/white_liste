@@ -1107,6 +1107,11 @@ def compute_clutter_score(page) -> tuple[float, dict, dict]:
     return clutter_score, clutter_detail, page_profile
 
 
+def _log(msg: str):
+    """Log to stderr (captured by pw_bridge for live streaming)."""
+    print(msg, file=sys.stderr, flush=True)
+
+
 def score_attention(page, domain: str) -> dict:
     """Charge une page avec interception reseau + detection DOM multi-couche.
     Consent cookies are pre-injected on the context before this call.
@@ -1115,71 +1120,89 @@ def score_attention(page, domain: str) -> dict:
     intercepted = []
     try:
         # 0. Install PASSIVE network listener BEFORE navigation
-        #    (page.on("request") — does NOT block any request)
         intercepted = setup_network_listener(page)
+        _log(f"    [net] Listener installe pour {domain}")
 
-        # 1. Navigate — wait_until="load" lets subresources (ads) start loading
+        # 1. Navigate
+        _log(f"    [nav] goto {url} (timeout=25s, wait_until=load)...")
         t_start = _time.monotonic()
         try:
             page.goto(url, timeout=25_000, wait_until="load")
-        except Exception:
-            # Timeout on "load" is common for heavy sites — continue anyway
-            pass
-        page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
+            page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Page chargee en {page_load_time_ms}ms")
+        except Exception as nav_err:
+            page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms: {str(nav_err)[:100]} — on continue")
 
         # 2. Wait for CMP to appear
+        _log(f"    [cmp] Attente 2s pour CMP...")
         page.wait_for_timeout(2000)
 
-        # 3. FIRST try clicking consent (gives real consent to CMP)
+        # 3. FIRST try clicking consent
         cookie_dismissed = dismiss_cookie_banner(page)
+        _log(f"    [cmp] Cookie banner: {'CLIQUE' if cookie_dismissed else 'pas trouve'}")
 
-        # 4. THEN force-remove any remaining overlays/backdrops
-        force_remove_overlays(page)
+        # 4. Force-remove overlays
+        n_removed = force_remove_overlays(page)
+        _log(f"    [cmp] Overlays supprimes: {n_removed}")
 
-        # 5. Wait 4s — ads load after consent is given
+        # 5. Wait 4s — ads load after consent
+        _log(f"    [ads] Attente 4s post-consent (chargement pubs)...")
         page.wait_for_timeout(4000)
 
-        # 6. Scroll full page for lazy-loading
+        # 6. Scroll full page
+        _log(f"    [scroll] Scroll complet pour lazy-loading...")
         scroll_full_page(page)
 
-        # 7. Wait for lazy ads to appear
+        # 7. Wait for lazy ads
+        _log(f"    [scroll] Attente 2s lazy ads...")
         page.wait_for_timeout(2000)
 
         # 8. Scroll back to top
         page.evaluate("window.scrollTo(0, 0)")
 
-        # 9. Wait 5s — Prebid/GPT auctions + creative rendering
+        # 9. Wait 5s — Prebid/GPT auctions
+        _log(f"    [ads] Attente 5s Prebid/GPT auctions...")
         page.wait_for_timeout(5000)
 
         # 10. Extract language
         content_lang = extract_lang(page)
+        _log(f"    [lang] Langue detectee: '{content_lang}'")
 
-        # 11. DOM analysis (behavior + selectors)
+        # 11. DOM analysis
+        _log(f"    [dom] Detection pubs multi-couche...")
         ads = analyze_ads_multi_layer(page)
+        _log(f"    [dom] {len(ads)} elements pub trouves")
 
         # 12. Ad-tech scripts
         adtech = detect_adtech_scripts(page)
+        scripts = adtech.get("scripts_detected", [])
+        _log(f"    [adtech] Scripts: {', '.join(scripts) if scripts else 'aucun'}")
 
-        # 13. Trackers (JS-based)
+        # 13. Trackers
         trackers = detect_trackers(page)
+        _log(f"    [track] Trackers: {trackers.get('total', 0)} detectes")
 
-        # 14. Compute network stats from intercepted requests
+        # 14. Network stats
         net_stats = compute_network_stats(intercepted)
-
-        # Debug: log network hits to stderr
         ad_hit_count = net_stats.get("ad_requests", 0)
         visual_hit_count = net_stats.get("ad_visual_requests", 0)
-        print(f"  [{domain}] Network: {ad_hit_count} ad reqs, {visual_hit_count} visual | DOM: {len(ads)} elements", file=sys.stderr, flush=True)
+        ad_domains = net_stats.get("ad_domains", [])
+        _log(f"    [net] {ad_hit_count} ad reqs, {visual_hit_count} visual, domaines: {', '.join(ad_domains[:5])}")
 
-        # 15. Score v4 (DOM + network combined) — kept for retrocompat
+        # 15. Score v4
+        _log(f"    [score] Calcul score v4...")
         score, breakdown, detection_method = compute_score_v4(ads, adtech, net_stats)
+        _log(f"    [score] v4={score} method={detection_method} breakdown={breakdown}")
 
-        # 16. NEW: Clutter score (viewport surface ratio measurement)
+        # 16. Clutter score
+        _log(f"    [clutter] Mesure encombrement 3 positions...")
         try:
             clutter_score, clutter_detail, page_profile = compute_clutter_score(page)
+            _log(f"    [clutter] score={clutter_score} atf={clutter_detail.get('atf', {}).get('ad_ratio', '?')} mid={clutter_detail.get('mid', {}).get('ad_ratio', '?')} deep={clutter_detail.get('deep', {}).get('ad_ratio', '?')}")
         except Exception as e:
-            print(f"  [{domain}] clutter score failed: {e}", file=sys.stderr, flush=True)
-            clutter_score = score  # fallback to v4 score
+            _log(f"    [clutter] ERREUR: {e} — fallback v4")
+            clutter_score = score
             clutter_detail = {}
             page_profile = {}
 
@@ -1275,36 +1298,51 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
     url = f"https://{domain}"
     intercepted = []
     try:
-        # Passive network listener BEFORE navigation
         intercepted = setup_network_listener(page)
+        _log(f"    [net] Listener installe")
 
+        _log(f"    [nav] goto {url}...")
+        t_start = _time.monotonic()
         try:
             page.goto(url, timeout=25_000, wait_until="load")
-        except Exception:
-            pass
+            load_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Charge en {load_ms}ms")
+        except Exception as e:
+            load_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Timeout/erreur {load_ms}ms: {str(e)[:80]} — on continue")
 
-        # Same sequence as score_attention
+        _log(f"    [cmp] Attente CMP 2s...")
         page.wait_for_timeout(2000)
-        cookie_dismissed = dismiss_cookie_banner(page)  # Click consent FIRST
-        force_remove_overlays(page)  # Then remove leftovers
+        cookie_dismissed = dismiss_cookie_banner(page)
+        _log(f"    [cmp] Cookie: {'CLIQUE' if cookie_dismissed else 'pas trouve'}")
+        n_removed = force_remove_overlays(page)
+        _log(f"    [cmp] Overlays supprimes: {n_removed}")
+        _log(f"    [ads] Attente 4s post-consent...")
         page.wait_for_timeout(4000)
+        _log(f"    [scroll] Scroll complet...")
         scroll_full_page(page)
+        _log(f"    [scroll] Attente 2s lazy ads...")
         page.wait_for_timeout(2000)
         page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(5000)  # Wait for Prebid/GPT auctions
+        _log(f"    [ads] Attente 5s Prebid/GPT...")
+        page.wait_for_timeout(5000)
 
-        # Detect ads AND highlight them in a single pass (no position matching)
+        _log(f"    [dom] Detection + highlighting...")
         ads = analyze_ads_multi_layer(page, highlight=True)
+        _log(f"    [dom] {len(ads)} pubs highlightees")
 
         adtech = detect_adtech_scripts(page)
         trackers = detect_trackers(page)
         net_stats = compute_network_stats(intercepted)
         score, breakdown, _ = compute_score_v4(ads, adtech, net_stats)
+        _log(f"    [score] v4={score} ads_dom={len(ads)} net_ad_reqs={net_stats.get('ad_requests', 0)}")
 
-        # Clutter score (viewport surface ratio)
+        _log(f"    [clutter] Mesure 3 positions...")
         try:
             clutter_score, clutter_detail, page_profile = compute_clutter_score(page)
-        except Exception:
+            _log(f"    [clutter] score={clutter_score}")
+        except Exception as e:
+            _log(f"    [clutter] ERREUR: {e}")
             clutter_score, clutter_detail, page_profile = score, {}, {}
 
         # ad_count: DOM elements if found, else estimate from unique ad domains
@@ -1349,11 +1387,14 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         os.makedirs(output_dir, exist_ok=True)
         safe_name = domain.replace(".", "_").replace("/", "_")
 
+        _log(f"    [screenshot] Capture viewport...")
         viewport_path = os.path.join(output_dir, f"{safe_name}_viewport.png")
         page.screenshot(path=viewport_path, full_page=False)
 
+        _log(f"    [screenshot] Capture fullpage...")
         fullpage_path = os.path.join(output_dir, f"{safe_name}_full.png")
         page.screenshot(path=fullpage_path, full_page=True)
+        _log(f"    [screenshot] OK — {viewport_path}")
 
         remove_network_listener(page)
 
@@ -1391,11 +1432,17 @@ def main():
     domains = request["domains"]
     mode = request.get("mode", "attention")
     output_dir = request.get("output_dir", "./output/screenshots")
+    total = len(domains)
+
+    _log(f"[pw_worker] START mode={mode} domains={total}")
+    _log(f"[pw_worker] Lancement Playwright Chromium headless...")
 
     results = {}
 
     with sync_playwright() as pw:
+        _log(f"[pw_worker] Playwright initialise, lancement navigateur...")
         browser = pw.chromium.launch(headless=True)
+        _log(f"[pw_worker] Navigateur lance, creation contexte (1280x800)...")
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent=(
@@ -1407,23 +1454,43 @@ def main():
 
         # Inject localStorage consent mock on every new page
         context.add_init_script(CONSENT_INIT_SCRIPT)
+        _log(f"[pw_worker] Consent init script injecte")
 
         for i, domain in enumerate(domains):
+            t_domain_start = _time.monotonic()
+            _log(f"[{i+1}/{total}] ━━ {domain} ━━━━━━━━━━━━━━━━━━")
+
             # Inject consent cookies for this domain BEFORE navigating
             try:
                 context.add_cookies(get_consent_cookies(domain))
-            except Exception:
-                pass  # some domain formats may fail, that's ok
+                _log(f"  [cookies] {len(get_consent_cookies(domain))} cookies consent injectes")
+            except Exception as e:
+                _log(f"  [cookies] ERREUR injection: {e}")
 
+            _log(f"  [page] Ouverture nouvelle page...")
             page = context.new_page()
             try:
                 if mode == "attention":
+                    _log(f"  [mode] score_attention...")
                     results[domain] = score_attention(page, domain)
                 elif mode == "screenshot":
+                    _log(f"  [mode] screenshot_with_ads...")
                     results[domain] = screenshot_with_ads(page, domain, output_dir)
                 else:
+                    _log(f"  [mode] extract_metadata...")
                     results[domain] = extract_metadata(page, domain)
+
+                elapsed = int((_time.monotonic() - t_domain_start) * 1000)
+                score = results[domain].get("score", "?")
+                err = results[domain].get("error", "")
+                if err:
+                    _log(f"  [RESULT] {domain} — score={score} — ERREUR: {err} — {elapsed}ms")
+                else:
+                    ad_count = results[domain].get("ad_count", "?")
+                    _log(f"  [RESULT] {domain} — score={score} ads={ad_count} — {elapsed}ms ✓")
             except Exception as e:
+                elapsed = int((_time.monotonic() - t_domain_start) * 1000)
+                _log(f"  [CRASH] {domain} — {str(e)[:150]} — {elapsed}ms")
                 if mode == "attention":
                     results[domain] = {
                         "ad_count": 0, "score": 5.0, "is_mfa": False, "details": {},
@@ -1452,10 +1519,11 @@ def main():
                     results[domain] = {"title": "", "description": "", "h1": ""}
             finally:
                 page.close()
+                _log(f"  [page] Fermee")
 
-            print(f"[{i+1}/{len(domains)}] {domain}", file=sys.stderr, flush=True)
-
+        _log(f"[pw_worker] Tous les domaines traites, fermeture navigateur...")
         browser.close()
+        _log(f"[pw_worker] DONE — {total} domaines")
 
     json.dump(results, sys.stdout, ensure_ascii=False)
 

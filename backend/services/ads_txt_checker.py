@@ -174,8 +174,12 @@ async def check_all_ads_txt(domains: list[str]) -> dict[str, AdsTxtResult]:
             results[domain] = await task
             done += 1
             r = results[domain]
-            icon = "+" if r.has_ads_txt else "x"
-            count = f"{r.seller_count} sellers" if r.has_ads_txt else "absent"
-            print(f"  [{done}/{total}] {icon} {domain} -> {count}")
+            if r.has_ads_txt:
+                ssps = ", ".join(r.top_ssps[:3]) if r.top_ssps else "aucun"
+                print(f"  [ads.txt] [{done}/{total}] ✓ {domain} — {r.seller_count} sellers, direct={r.is_direct}, top: {ssps}", flush=True)
+            elif r.error:
+                print(f"  [ads.txt] [{done}/{total}] ✗ {domain} — erreur: {r.error[:80]}", flush=True)
+            else:
+                print(f"  [ads.txt] [{done}/{total}] ⚠ {domain} — HTTP {r.http_code or '?'} — absent", flush=True)
 
     return results

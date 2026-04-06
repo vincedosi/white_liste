@@ -17,18 +17,18 @@ export function KpiCard({ label, value, color, delta, subtitle }: KpiCardProps) 
       {/* Subtle top accent line */}
       {color && (
         <div
-          className="absolute top-0 left-0 right-0 h-[1px] opacity-40 group-hover:opacity-70 transition-opacity"
+          className="absolute top-0 left-0 right-0 h-[2px] opacity-60 group-hover:opacity-100 transition-opacity"
           style={{ backgroundColor: color }}
         />
       )}
 
-      <p className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-2 select-none">
+      <p className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim mb-2 select-none">
         {label}
       </p>
 
       <p
-        className="font-sans font-bold text-[36px] leading-none tracking-tight"
-        style={{ color: color || 'var(--color-on-surface, #dee2f0)' }}
+        className="font-sans font-extrabold text-[36px] leading-none tracking-tight"
+        style={{ color: color || '#0F172A' }}
       >
         {value}
       </p>
@@ -37,7 +37,7 @@ export function KpiCard({ label, value, color, delta, subtitle }: KpiCardProps) 
         <p
           className={clsx(
             'font-mono text-xs mt-2',
-            delta.positive ? 'text-primary' : 'text-danger',
+            delta.positive ? 'text-success' : 'text-danger',
           )}
         >
           {delta.positive ? '+' : ''}{delta.value}

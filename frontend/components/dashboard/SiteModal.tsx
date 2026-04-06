@@ -16,7 +16,7 @@ function MetricBox({ label, value, color }: { label: string; value: string | num
   return (
     <div className="flex flex-col items-center gap-1 bg-surface-mid rounded-lg px-3 py-2.5 border border-outline/10">
       <span className="font-mono text-[9px] uppercase tracking-[2px] text-dim">{label}</span>
-      <span className="font-sans font-bold text-lg" style={{ color: color || '#dee2f0' }}>
+      <span className="font-sans font-bold text-lg" style={{ color: color || '#0F172A' }}>
         {value}
       </span>
     </div>
@@ -196,22 +196,22 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
   const responseTime = site.health.response_time_ms;
   const statusConf = STATUS_CONFIG[site.health.status] || STATUS_CONFIG.error;
 
-  const scoreColor = score !== null ? (score >= 7 ? '#4edea3' : score >= 4 ? '#F97316' : '#EF4444') : '#64748b';
+  const scoreColor = score !== null ? (score >= 7 ? '#22C55E' : score >= 4 ? '#F97316' : '#EF4444') : '#64748b';
 
   const statusBadge: 'ok' | 'dead' | 'mfa' | 'flag' =
     site.health.status === 'ok' ? 'ok' : site.health.status === 'dead' ? 'dead' : 'flag';
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-surface-low rounded-xl border border-outline/20 shadow-2xl mx-4 animate-in slide-in-from-bottom-4 fade-in duration-300"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-outline shadow-xl mx-4 animate-in slide-in-from-bottom-4 fade-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-surface-low/95 backdrop-blur-sm border-b border-outline/10">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white/95 backdrop-blur-sm border-b border-outline">
           <div className="flex items-center gap-3">
             <h2 className="font-mono text-lg font-bold text-on-surface">{site.domain}</h2>
             <Badge variant={statusBadge}>{statusConf.label}</Badge>
@@ -241,7 +241,7 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
             <MetricBox
               label="Cookie"
               value={site.ads_txt?.present ? 'ads.txt' : 'N/A'}
-              color={site.ads_txt?.present ? '#4edea3' : '#64748b'}
+              color={site.ads_txt?.present ? '#22C55E' : '#94A3B8'}
             />
           </div>
 

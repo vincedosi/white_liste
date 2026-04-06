@@ -124,8 +124,14 @@ def categorize_all(
     total = len(domains)
 
     for done, domain in enumerate(domains, 1):
-        results[domain] = categorize_site(client, domain, metadata_map.get(domain, {}))
+        meta = metadata_map.get(domain, {})
+        print(f"  [cat] [{done}/{total}] {domain} — title='{meta.get('title', '')[:50]}' ...", flush=True)
+        print(f"    [mistral] Appel {MISTRAL_MODEL}...", flush=True)
+        results[domain] = categorize_site(client, domain, meta)
         r = results[domain]
-        print(f"  [{done}/{total}] {domain} -> {r.category} (confidence: {r.confidence})")
+        if r.error:
+            print(f"    [mistral] ERREUR: {r.error}", flush=True)
+        else:
+            print(f"    [mistral] -> {r.category} (confidence: {r.confidence})", flush=True)
 
     return results

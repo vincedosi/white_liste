@@ -157,28 +157,40 @@ def localize_all(
     total = len(domains)
 
     for i, domain in enumerate(domains):
+        print(f"  [geo] [{i+1}/{total}] {domain}...", flush=True)
         result = LocalizationResult()
 
         tld, tld_country = extract_tld(domain)
         result.tld = tld
         result.tld_country = tld_country
+        print(f"    [tld] .{tld} -> {tld_country or '?'}", flush=True)
 
+        print(f"    [dns] Resolution IP...", flush=True)
         ip = resolve_ip(domain)
         result.ip_address = ip
+        if ip:
+            print(f"    [dns] {domain} -> {ip}", flush=True)
+        else:
+            print(f"    [dns] {domain} -> ECHEC resolution", flush=True)
 
         if ip:
+            print(f"    [geoip] Geolocalisation {ip}...", flush=True)
             geo = geolocate_ip(ip)
             if geo:
                 result.server_country = geo.get("country", "")
                 result.server_country_code = geo.get("countryCode", "")
                 result.server_city = geo.get("city", "")
                 result.server_isp = geo.get("isp", "")
+                print(f"    [geoip] {result.server_country} / {result.server_city} / ISP: {result.server_isp}", flush=True)
+            else:
+                print(f"    [geoip] Pas de resultat pour {ip}", flush=True)
 
         if content_langs and domain in content_langs:
             lang_raw = content_langs[domain]
             code, name = parse_content_lang(lang_raw)
             result.content_lang_code = code
             result.content_lang = name
+            print(f"    [lang] {code} ({name})", flush=True)
 
         results[domain] = result
 
@@ -186,6 +198,7 @@ def localize_all(
             progress_callback(i + 1, total, domain, result)
 
         if ip and i < total - 1:
+            print(f"    [wait] 1.5s rate-limit ip-api.com...", flush=True)
             time.sleep(1.5)
 
     return results

@@ -1,6 +1,6 @@
 """
 MLI — Media-List Intelligence
-Application Streamlit — Dark Intelligence Dashboard (inspire Sequence.io)
+Application Streamlit — Corporate Intelligence Dashboard
 """
 from __future__ import annotations
 import asyncio
@@ -27,17 +27,17 @@ from ads_txt_checker import check_all_ads_txt
 from config import TAXONOMY, MFA_THRESHOLD
 
 
-# ── Plotly defaults (DESIGN.md v4 — Dark Terminal) ───────
+# ── Plotly defaults (DESIGN.md v5 — Corporate Intelligence) ───────
 PLOTLY_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, sans-serif", color="#94a3b8", size=12),
+    font=dict(family="Plus Jakarta Sans, sans-serif", color="#64748B", size=12),
 )
 PLOTLY_AXIS = dict(
     showgrid=True,
-    gridcolor="rgba(60,74,66,0.15)",
+    gridcolor="#F1F5F9",
     zeroline=False,
-    tickfont=dict(color="#64748b"),
+    tickfont=dict(color="#64748B"),
 )
 
 # Ad-tech display names
@@ -65,13 +65,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS Dark Mode (DESIGN.md v3 — Dark Intelligence) ────
+# ── CSS Light Mode (DESIGN.md v5 — Corporate Intelligence) ────
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     * MLI — Dark Terminal Intelligence
-     * Bloomberg Terminal × Sequence.io × Linear.app
+     * MLI — Corporate Intelligence Dashboard
+     * Light mode, bleu royal dominant, clean, pro
      * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
     /* ── Global backgrounds ─────────────────────────── */
@@ -79,7 +79,7 @@ st.markdown("""
     .stApp [data-testid="stAppViewContainer"],
     .stApp [data-testid="stHeader"],
     .main .block-container {
-        background-color: #0e141d !important;
+        background-color: #EEF2FF !important;
     }
 
     /* ── Typography — TEXT elements only ─────────────
@@ -92,15 +92,15 @@ st.markdown("""
     .stApp .stMarkdown li,
     .stApp caption,
     .stApp td, .stApp th {
-        color: #dee2f0 !important;
-        font-family: 'Inter', sans-serif !important;
+        color: #0F172A !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
 
     /* ── Custom scrollbar ───────────────────────────── */
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: #090e17; }
-    ::-webkit-scrollbar-thumb { background: #3c4a42; border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: #4edea3; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #F1F5F9; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
     /* ── Status pill animation ───────────────────────── */
     @keyframes pulse-dot {
@@ -110,102 +110,170 @@ st.markdown("""
     .status-pill {
         display: inline-flex; align-items: center; gap: 8px;
         padding: 6px 14px; border-radius: 9999px;
-        background: rgba(78,222,163,0.1);
-        border: 1px solid rgba(78,222,163,0.2);
-        font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4edea3;
+        background: #DBEAFE;
+        border: 1px solid #BFDBFE;
+        font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #1D4ED8;
     }
     .status-dot {
         width: 6px; height: 6px; border-radius: 50%;
-        background: #4edea3;
+        background: #3B82F6;
         animation: pulse-dot 2s ease-in-out infinite;
     }
 
     /* ── Sidebar ────────────────────────────────────── */
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] > div {
-        background-color: #0e141d !important;
-        border-right: 1px solid rgba(60,74,66,0.15) !important;
-        box-shadow: 1px 0 20px rgba(78,222,163,0.03) !important;
+        background-color: #1E2A4A !important;
+        border-right: 1px solid rgba(255,255,255,0.08) !important;
+        box-shadow: 2px 0 12px rgba(30,42,74,0.15) !important;
     }
     [data-testid="stSidebar"] .stMarkdown h3,
     [data-testid="stSidebar"] .stMarkdown h5 {
         font-weight: 600 !important;
         font-size: 13px !important;
-        color: #94a3b8 !important;
+        color: #CBD5E1 !important;
     }
+    [data-testid="stSidebar"] p,
     [data-testid="stSidebar"] label,
     [data-testid="stSidebar"] .stMarkdown p {
-        color: #94a3b8 !important;
+        color: #CBD5E1 !important;
         font-size: 13px !important;
     }
     [data-testid="stSidebar"] .stCaption, [data-testid="stSidebar"] .stCaption p {
-        color: #64748b !important;
+        color: #94A3B8 !important;
+    }
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(255,255,255,0.08) !important;
     }
 
-    /* ── ALL Inputs ─────────────────────────────────── */
+    /* Sidebar inputs */
+    [data-testid="stSidebar"] .stTextInput input,
+    [data-testid="stSidebar"] .stTextInput input[type="text"],
+    [data-testid="stSidebar"] .stTextInput input[type="password"] {
+        background-color: #2A3A5C !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 13px !important;
+        caret-color: #60A5FA !important;
+    }
+    [data-testid="stSidebar"] .stTextInput input:focus,
+    [data-testid="stSidebar"] .stTextInput input[type="password"]:focus {
+        border-color: #60A5FA !important;
+        box-shadow: 0 0 0 2px rgba(96,165,250,0.2) !important;
+    }
+    [data-testid="stSidebar"] .stCheckbox label,
+    [data-testid="stSidebar"] .stCheckbox label p {
+        color: #CBD5E1 !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div {
+        background-color: #2A3A5C !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] span {
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:not([kind="primary"]) {
+        background-color: #2A3A5C !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        color: #CBD5E1 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:not([kind="primary"]):hover {
+        border-color: #60A5FA !important;
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] .stSlider label p { color: #CBD5E1 !important; }
+    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] div[role="slider"] { background-color: #3B82F6 !important; }
+
+    /* Sidebar file uploader */
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] { background-color: transparent !important; }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] section {
+        background-color: #2A3A5C !important;
+        border: 1px dashed rgba(255,255,255,0.15) !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] section > div { color: #94A3B8 !important; }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+        background-color: #1E2A4A !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        color: #CBD5E1 !important;
+    }
+    [data-testid="stSidebar"] details[data-testid="stExpander"] {
+        background-color: #2A3A5C !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+    }
+    [data-testid="stSidebar"] details[data-testid="stExpander"] summary {
+        color: #CBD5E1 !important;
+    }
+    [data-testid="stSidebar"] details[data-testid="stExpander"] > div {
+        background-color: #2A3A5C !important;
+    }
+
+    /* ── ALL Inputs (main area) ─────────────────────── */
     .stTextInput input,
     .stTextInput input[type="text"],
     .stTextInput input[type="password"],
     .stTextArea textarea,
     .stSelectbox > div > div,
     .stSelectbox [data-baseweb="select"] > div,
-    .stNumberInput input,
-    [data-testid="stSidebar"] .stTextInput input,
-    [data-testid="stSidebar"] .stTextInput input[type="password"] {
-        background-color: #090e17 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        color: #dee2f0 !important;
+    .stNumberInput input {
+        background-color: #F8FAFC !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #0F172A !important;
         border-radius: 10px !important;
-        font-family: 'JetBrains Mono', monospace !important;
         font-size: 13px !important;
-        caret-color: #4edea3 !important;
+        caret-color: #3B82F6 !important;
     }
     .stTextArea textarea {
-        color: rgba(78,222,163,0.7) !important;
+        color: #475569 !important;
+        font-family: 'JetBrains Mono', monospace !important;
     }
     .stTextInput input:focus,
     .stTextInput input[type="password"]:focus,
     .stTextArea textarea:focus {
-        border-color: rgba(78,222,163,0.4) !important;
-        box-shadow: 0 0 0 2px rgba(78,222,163,0.08) !important;
+        border-color: #3B82F6 !important;
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.1) !important;
     }
     /* Selectbox dropdown */
     [data-baseweb="popover"],
     [data-baseweb="menu"],
     [data-baseweb="popover"] ul,
     [data-baseweb="menu"] ul {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
     }
     [data-baseweb="menu"] li {
-        color: #dee2f0 !important;
+        color: #0F172A !important;
         background-color: transparent !important;
     }
     [data-baseweb="menu"] li:hover,
     [data-baseweb="menu"] li[aria-selected="true"] {
-        background-color: #252a34 !important;
+        background-color: #EFF6FF !important;
     }
     .stSelectbox [data-baseweb="select"] span {
-        color: #dee2f0 !important;
+        color: #0F172A !important;
     }
 
     /* ── Buttons — CTA (primary) ───────────────────── */
     .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #4edea3, #10B981) !important;
-        color: #090e17 !important;
+        background: linear-gradient(135deg, #1D4ED8, #2563EB) !important;
+        color: #FFFFFF !important;
         border: none !important;
-        border-radius: 10px !important;
-        font-weight: 800 !important;
+        border-radius: 12px !important;
+        font-weight: 700 !important;
         font-size: 13px !important;
         text-transform: uppercase !important;
-        letter-spacing: 2px !important;
+        letter-spacing: 1.5px !important;
         padding: 14px 28px !important;
-        font-family: 'Inter', sans-serif !important;
-        box-shadow: 0 4px 20px rgba(78,222,163,0.15) !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        box-shadow: 0 4px 14px rgba(37,99,235,0.25) !important;
         transition: all 0.15s ease !important;
     }
     .stButton > button[kind="primary"]:hover {
-        box-shadow: 0 6px 28px rgba(78,222,163,0.25) !important;
+        box-shadow: 0 6px 20px rgba(37,99,235,0.35) !important;
     }
     .stButton > button[kind="primary"]:active {
         transform: scale(0.98) !important;
@@ -213,24 +281,25 @@ st.markdown("""
 
     /* ── Buttons — secondary ───────────────────────── */
     .stButton > button:not([kind="primary"]):not([kind="tertiary"]) {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        color: #dee2f0 !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #475569 !important;
         border-radius: 10px !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-weight: 500 !important;
         font-size: 13px !important;
         transition: all 0.15s ease !important;
     }
     .stButton > button:not([kind="primary"]):not([kind="tertiary"]):hover {
-        border-color: rgba(78,222,163,0.3) !important;
-        color: #4edea3 !important;
+        border-color: #3B82F6 !important;
+        color: #1D4ED8 !important;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.1) !important;
     }
 
     /* ── Buttons — tertiary (link) ─────────────────── */
     .stButton > button[kind="tertiary"] {
-        color: #4edea3 !important;
-        font-family: 'Inter', sans-serif !important;
+        color: #1D4ED8 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-weight: 500 !important;
         font-size: 13px !important;
         padding: 2px 0 !important;
@@ -238,50 +307,52 @@ st.markdown("""
         border: none !important;
     }
     .stButton > button[kind="tertiary"]:hover {
-        color: #7aedc4 !important;
+        color: #2563EB !important;
         text-decoration: underline !important;
     }
 
     /* ── Download buttons ──────────────────────────── */
     .stDownloadButton > button {
-        background: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        color: #dee2f0 !important;
-        font-family: 'Inter', sans-serif !important;
+        background: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #475569 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-weight: 500 !important;
         font-size: 13px !important;
         border-radius: 10px !important;
     }
     .stDownloadButton > button:hover {
-        border-color: rgba(78,222,163,0.3) !important;
-        color: #4edea3 !important;
+        border-color: #3B82F6 !important;
+        color: #1D4ED8 !important;
+        box-shadow: 0 2px 8px rgba(59,130,246,0.1) !important;
     }
 
     /* ── Tabs ───────────────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
-        background-color: #161c25 !important;
-        border-radius: 10px !important;
+        background-color: #F1F5F9 !important;
+        border-radius: 12px !important;
         padding: 4px !important;
         gap: 4px !important;
         border-bottom: none !important;
     }
     .stTabs [data-baseweb="tab"] {
-        color: #94a3b8 !important;
+        color: #64748B !important;
         border-radius: 8px !important;
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-size: 13px !important;
         font-weight: 500 !important;
         border-bottom: none !important;
         background-color: transparent !important;
     }
     .stTabs [data-baseweb="tab"]:hover {
-        color: #dee2f0 !important;
-        background-color: rgba(255,255,255,0.02) !important;
+        color: #1D4ED8 !important;
+        background-color: rgba(59,130,246,0.05) !important;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #252a34 !important;
-        color: #4edea3 !important;
+        background-color: #FFFFFF !important;
+        color: #1D4ED8 !important;
         font-weight: 600 !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
         background-color: transparent !important;
@@ -292,140 +363,142 @@ st.markdown("""
 
     /* ── Expanders ──────────────────────────────────── */
     details[data-testid="stExpander"] {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        border-radius: 10px !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px !important;
     }
     details[data-testid="stExpander"] summary {
-        color: #94a3b8 !important;
-        font-family: 'Inter', sans-serif !important;
+        color: #475569 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
     details[data-testid="stExpander"] summary:hover {
-        color: #dee2f0 !important;
+        color: #1D4ED8 !important;
     }
     details[data-testid="stExpander"] > div {
-        background-color: #161c25 !important;
+        background-color: #FFFFFF !important;
     }
 
     /* ── Metrics ────────────────────────────────────── */
     [data-testid="stMetric"] {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
         border-radius: 12px !important;
         padding: 16px !important;
     }
     [data-testid="stMetricLabel"] p {
-        color: #64748b !important;
+        color: #94A3B8 !important;
     }
     [data-testid="stMetricValue"] {
-        color: #dee2f0 !important;
+        color: #0F172A !important;
     }
     [data-testid="stMetricDelta"] {
-        color: #64748b !important;
+        color: #94A3B8 !important;
     }
 
     /* ── Progress ───────────────────────────────────── */
-    .stProgress > div > div { background-color: #4edea3 !important; }
-    .stProgress > div { background-color: rgba(60,74,66,0.15) !important; }
+    .stProgress > div > div { background-color: #3B82F6 !important; }
+    .stProgress > div { background-color: #E2E8F0 !important; }
 
     /* ── Alerts ─────────────────────────────────────── */
     [data-testid="stAlert"] {
         border-radius: 10px !important;
-        font-family: 'Inter', sans-serif !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
     .stSuccess, [data-testid="stAlert"]:has([data-testid*="Success"]) {
-        background-color: rgba(78,222,163,0.08) !important;
-        border-color: rgba(78,222,163,0.2) !important;
+        background-color: #F0FDF4 !important;
+        border: 1px solid #BBF7D0 !important;
     }
     .stInfo, [data-testid="stAlert"]:has([data-testid*="Info"]) {
-        background-color: rgba(129,140,248,0.08) !important;
-        border-color: rgba(129,140,248,0.2) !important;
+        background-color: #EFF6FF !important;
+        border: 1px solid #BFDBFE !important;
     }
     .stWarning, [data-testid="stAlert"]:has([data-testid*="Warning"]) {
-        background-color: rgba(249,115,22,0.08) !important;
-        border-color: rgba(249,115,22,0.2) !important;
+        background-color: #FFFBEB !important;
+        border: 1px solid #FDE68A !important;
     }
     .stError, [data-testid="stAlert"]:has([data-testid*="Error"]) {
-        background-color: rgba(239,68,68,0.08) !important;
-        border-color: rgba(239,68,68,0.2) !important;
+        background-color: #FEF2F2 !important;
+        border: 1px solid #FECACA !important;
     }
     [data-testid="stAlert"] p, [data-testid="stAlert"] span {
-        color: #dee2f0 !important;
+        color: #0F172A !important;
     }
 
     /* ── Dividers ───────────────────────────────────── */
-    hr { border-color: rgba(60,74,66,0.15) !important; opacity: 1 !important; }
+    hr { border-color: #E2E8F0 !important; opacity: 1 !important; }
 
     /* ── DataFrames ─────────────────────────────────── */
     [data-testid="stDataFrame"] {
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        border-radius: 10px !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 12px !important;
     }
-    [data-testid="stDataFrame"] table { background-color: #161c25 !important; }
+    [data-testid="stDataFrame"] table { background-color: #FFFFFF !important; }
     [data-testid="stDataFrame"] th {
-        background-color: #252a34 !important;
-        color: #94a3b8 !important;
-        font-family: 'Inter', sans-serif !important;
+        background-color: #F8FAFC !important;
+        color: #64748B !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
     }
     [data-testid="stDataFrame"] td {
-        color: #dee2f0 !important;
-        background-color: #161c25 !important;
-        border-color: rgba(60,74,66,0.1) !important;
+        color: #0F172A !important;
+        background-color: #FFFFFF !important;
+        border-color: #F1F5F9 !important;
     }
-    [data-testid="stDataFrame"] canvas + div { background-color: #161c25 !important; }
+    [data-testid="stDataFrame"] canvas + div { background-color: #FFFFFF !important; }
 
     /* ── Dialog / Modal ─────────────────────────────── */
     [data-testid="stModal"] > div {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 16px !important;
     }
 
     /* ── Code blocks ────────────────────────────────── */
     .stCodeBlock, .stCodeBlock pre, .stCodeBlock code,
     .stApp pre, .stApp code {
-        background-color: #090e17 !important;
-        color: #94a3b8 !important;
+        background-color: #F8FAFC !important;
+        color: #475569 !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 12px !important;
-    }
-    .stCodeBlock button { color: #94a3b8 !important; }
-
-    /* ── File uploader ──────────────────────────────── */
-    [data-testid="stFileUploader"] { background-color: #0e141d !important; border-radius: 10px !important; }
-    [data-testid="stFileUploader"] section {
-        background-color: #090e17 !important;
-        border: 1px dashed rgba(60,74,66,0.3) !important;
+        border: 1px solid #E2E8F0 !important;
         border-radius: 10px !important;
     }
-    [data-testid="stFileUploader"] section > div { color: #64748b !important; }
+    .stCodeBlock button { color: #64748B !important; }
+
+    /* ── File uploader ──────────────────────────────── */
+    [data-testid="stFileUploader"] { background-color: transparent !important; border-radius: 10px !important; }
+    [data-testid="stFileUploader"] section {
+        background-color: #F8FAFC !important;
+        border: 1px dashed #CBD5E1 !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stFileUploader"] section > div { color: #94A3B8 !important; }
     [data-testid="stFileUploader"] button {
-        background-color: #161c25 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
-        color: #dee2f0 !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        color: #475569 !important;
         border-radius: 8px !important;
     }
 
     /* ── Radio / Checkbox / Slider ──────────────────── */
-    .stRadio > div, .stRadio label, .stRadio [role="radiogroup"] label p { color: #94a3b8 !important; }
-    .stRadio label[data-checked="true"], .stRadio label:has(input:checked) { color: #dee2f0 !important; }
-    .stCheckbox label, .stCheckbox label p { color: #94a3b8 !important; }
-    .stCheckbox [data-testid="stCheckbox"] > label > span:first-child { border-color: rgba(60,74,66,0.3) !important; }
-    .stSlider label p { color: #94a3b8 !important; }
-    .stSlider [data-baseweb="slider"] div[role="slider"] { background-color: #4edea3 !important; }
+    .stRadio > div, .stRadio label, .stRadio [role="radiogroup"] label p { color: #475569 !important; }
+    .stRadio label[data-checked="true"], .stRadio label:has(input:checked) { color: #0F172A !important; }
+    .stCheckbox label, .stCheckbox label p { color: #475569 !important; }
+    .stCheckbox [data-testid="stCheckbox"] > label > span:first-child { border-color: #CBD5E1 !important; }
+    .stSlider label p { color: #475569 !important; }
+    .stSlider [data-baseweb="slider"] div[role="slider"] { background-color: #3B82F6 !important; }
 
     /* ── Tooltips ────────────────────────────────────── */
     [data-testid="stTooltipContent"], [data-baseweb="tooltip"] > div {
-        background-color: #252a34 !important;
-        color: #dee2f0 !important;
-        border: 1px solid rgba(60,74,66,0.15) !important;
+        background-color: #1E2A4A !important;
+        color: #FFFFFF !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
         border-radius: 8px !important;
     }
 
     /* ── Spinner / Caption ──────────────────────────── */
-    .stSpinner > div { color: #4edea3 !important; }
-    .stSpinner p { color: #94a3b8 !important; }
-    .stCaption, .stCaption p { color: #64748b !important; }
+    .stSpinner > div { color: #3B82F6 !important; }
+    .stSpinner p { color: #475569 !important; }
+    .stCaption, .stCaption p { color: #94A3B8 !important; }
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      * Custom HTML components
@@ -433,79 +506,81 @@ st.markdown("""
 
     /* Header */
     .mli-header {
-        padding: 24px 0 32px;
-        border-bottom: 1px solid rgba(60,74,66,0.15);
+        background: linear-gradient(135deg, #1E3A8A, #2563EB);
+        padding: 32px 40px;
+        border-radius: 20px;
         margin-bottom: 32px;
+        box-shadow: 0 4px 20px rgba(30,58,138,0.15);
     }
     .mli-logo {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-size: 32px;
         font-weight: 800;
-        color: #dee2f0;
+        color: #FFFFFF !important;
         letter-spacing: -1px;
         margin: 0;
     }
-    .mli-logo span { color: #4edea3; }
+    .mli-logo span { color: #60A5FA; }
     .mli-subtitle {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-size: 14px;
-        color: #64748b;
+        color: rgba(255,255,255,0.7) !important;
         margin-top: 4px;
     }
 
     /* KPI Cards */
     .kpi-card {
-        background: #161c25;
-        border: 1px solid rgba(60,74,66,0.15);
-        border-top: 1px solid rgba(255,255,255,0.05);
-        border-radius: 12px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 14px;
         padding: 20px 24px;
         text-align: left;
-        transition: border-color 0.2s ease;
+        transition: box-shadow 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
     }
-    .kpi-card:hover { border-color: rgba(78,222,163,0.15); }
+    .kpi-card:hover { box-shadow: 0 4px 12px rgba(30,58,138,0.08); }
     .kpi-value {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-size: 36px;
-        font-weight: 700;
-        color: #dee2f0;
+        font-weight: 800;
+        color: #0F172A;
         line-height: 1.1;
         margin: 8px 0 0;
     }
     .kpi-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 10px;
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 11px;
         font-weight: 500;
         text-transform: uppercase;
-        letter-spacing: 2px;
-        color: #64748b;
+        letter-spacing: 1.5px;
+        color: #94A3B8;
         margin-bottom: 0;
     }
     .kpi-delta {
         font-family: 'JetBrains Mono', monospace;
         font-size: 12px;
         margin-top: 6px;
-        color: #64748b;
+        color: #94A3B8;
     }
-    .kpi-delta.positive { color: #4edea3; }
+    .kpi-delta.positive { color: #22C55E; }
     .kpi-delta.negative { color: #EF4444; }
 
     /* Section cards */
     .mli-card {
-        background: #161c25;
-        border: 1px solid rgba(60,74,66,0.15);
-        border-top: 1px solid rgba(255,255,255,0.05);
-        border-radius: 12px;
-        padding: 20px 24px;
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 16px;
+        padding: 24px;
         margin-bottom: 16px;
-        transition: border-color 0.2s ease;
+        transition: box-shadow 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
     }
-    .mli-card:hover { border-color: rgba(78,222,163,0.1); }
+    .mli-card:hover { box-shadow: 0 4px 12px rgba(30,58,138,0.08); }
     .section-title {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-size: 14px;
         font-weight: 600;
-        color: #dee2f0;
+        color: #0F172A;
         margin-bottom: 16px;
     }
 
@@ -513,52 +588,52 @@ st.markdown("""
     .badge {
         display: inline-block;
         padding: 3px 10px;
-        border-radius: 6px;
+        border-radius: 8px;
         font-family: 'JetBrains Mono', monospace;
         font-size: 11px;
         font-weight: 500;
     }
-    .badge-ok { background: rgba(78,222,163,0.12); color: #4edea3; }
-    .badge-dead { background: rgba(239,68,68,0.12); color: #EF4444; }
-    .badge-mfa { background: rgba(249,115,22,0.12); color: #F97316; }
-    .badge-flag { background: rgba(129,140,248,0.12); color: #818CF8; }
-    .badge-present { background: rgba(78,222,163,0.12); color: #4edea3; }
-    .badge-absent { background: rgba(71,85,105,0.12); color: #64748b; }
+    .badge-ok { background: #DCFCE7; color: #16A34A; }
+    .badge-dead { background: #FEE2E2; color: #DC2626; }
+    .badge-mfa { background: #FFEDD5; color: #EA580C; }
+    .badge-flag { background: #E0E7FF; color: #4F46E5; }
+    .badge-present { background: #DBEAFE; color: #1D4ED8; }
+    .badge-absent { background: #F1F5F9; color: #94A3B8; }
 
     /* Table rows */
     .row-header {
         font-family: 'JetBrains Mono', monospace;
         font-size: 10px;
         font-weight: 500;
-        color: #64748b;
+        color: #64748B;
         text-transform: uppercase;
         letter-spacing: 1px;
         padding: 10px 0 10px 8px;
-        border-bottom: 1px solid rgba(60,74,66,0.15);
-        background: #252a34;
+        border-bottom: 1px solid #E2E8F0;
+        background: #F8FAFC;
         border-radius: 4px;
     }
     .row-cell {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Plus Jakarta Sans', sans-serif;
         font-size: 13px;
-        color: #94a3b8;
+        color: #475569;
         padding: 8px 0 8px 8px;
         display: flex;
         align-items: center;
         min-height: 36px;
-        border-bottom: 1px solid rgba(60,74,66,0.08);
+        border-bottom: 1px solid #F1F5F9;
     }
 
     /* Footer */
     .mli-footer {
-        color: #475569;
+        color: #94A3B8;
         font-family: 'JetBrains Mono', monospace;
         font-size: 11px;
         letter-spacing: 0.5px;
     }
 
     /* Plotly */
-    .js-plotly-plot { border-radius: 10px; }
+    .js-plotly-plot { border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -914,7 +989,7 @@ def render_table(df: pd.DataFrame, columns: dict[str, str], has_screenshots: boo
             elif c == "attention_score":
                 score = float(val) if val else 0
                 if score >= 7:
-                    color = "#4edea3"
+                    color = "#22C55E"
                 elif score >= MFA_THRESHOLD:
                     color = "#F97316"
                 else:
@@ -1430,7 +1505,7 @@ if st.session_state.report:
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-label">Sites nettoyes</div>
-            <div class="kpi-value" style="color:#EF4444;">{cleaned}</div>
+            <div class="kpi-value" style="color:#DC2626;">{cleaned}</div>
             <div class="kpi-delta negative">{report.sites_dead} morts · {report.sites_mfa} MFA</div>
             {cleaned_delta}
         </div>
@@ -1449,8 +1524,8 @@ if st.session_state.report:
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-label">Sites sains</div>
-            <div class="kpi-value" style="color:#4edea3;">{healthy}</div>
-            <div class="kpi-delta positive">{report.sites_flagged} en surveillance</div>
+            <div class="kpi-value" style="color:#22C55E;">{healthy}</div>
+            <div class="kpi-delta">{report.sites_flagged} en surveillance</div>
             {prev_healthy}
         </div>
         """, unsafe_allow_html=True)
@@ -1460,7 +1535,7 @@ if st.session_state.report:
         st.markdown(f"""
         <div class="kpi-card">
             <div class="kpi-label">Score attention moy.</div>
-            <div class="kpi-value" style="color:#4edea3;">{report.avg_attention_score}<span style="font-size:14px;color:#64748B;">/10</span></div>
+            <div class="kpi-value" style="color:#1D4ED8;">{report.avg_attention_score}<span style="font-size:14px;color:#94A3B8;">/10</span></div>
             <div class="kpi-delta">Sur les sites actifs</div>
             {score_delta}
         </div>
@@ -1484,7 +1559,7 @@ if st.session_state.report:
         fig_health = px.pie(
             health_data, values="Nombre", names="Status", color="Status",
             color_discrete_map={
-                "Sains": "#4edea3", "Attention faible": "#818CF8",
+                "Sains": "#22C55E", "Attention faible": "#6366F1",
                 "MFA": "#F97316", "Morts": "#EF4444",
             },
             hole=0.55,
@@ -1492,11 +1567,11 @@ if st.session_state.report:
         fig_health.update_layout(
             **PLOTLY_LAYOUT,
             showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font=dict(size=11, color="#94a3b8")),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font=dict(size=11, color="#64748B")),
             margin=dict(t=10, b=40, l=10, r=10),
             height=300,
         )
-        fig_health.update_traces(textinfo="value+percent", textfont_color="#dee2f0")
+        fig_health.update_traces(textinfo="value+percent", textfont_color="#0F172A")
         st.plotly_chart(fig_health, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1511,12 +1586,12 @@ if st.session_state.report:
 
             fig_cat = px.bar(
                 cat_df, x="Nombre", y="Categorie", orientation="h",
-                color_discrete_sequence=["#4edea3"],
+                color_discrete_sequence=["#3B82F6"],
             )
             fig_cat.update_layout(
                 **PLOTLY_LAYOUT, showlegend=False,
                 margin=dict(t=10, b=10, l=10, r=10), height=300,
-                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#94A3B8")),
+                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#64748B")),
             )
             st.plotly_chart(fig_cat, use_container_width=True)
         else:
@@ -1542,7 +1617,7 @@ if st.session_state.report:
 
         att_df = pd.DataFrame(att_rows)
         fig_att = go.Figure()
-        zone_colors = {"ATF": "#EF4444", "Mid": "#F97316", "Deep": "#EAB308", "Footer": "#475569", "Sticky": "#7C3AED"}
+        zone_colors = {"ATF": "#EF4444", "Mid": "#F97316", "Deep": "#EAB308", "Footer": "#CBD5E1", "Sticky": "#8B5CF6"}
         for zone, color in zone_colors.items():
             fig_att.add_trace(go.Bar(
                 y=att_df["Domaine"], x=att_df[zone],
@@ -1553,8 +1628,8 @@ if st.session_state.report:
             margin=dict(t=10, b=10, l=10, r=10),
             height=max(250, len(att_rows) * 30 + 60),
             xaxis=dict(**PLOTLY_AXIS, title="Nombre de pubs"),
-            yaxis=dict(showgrid=False, tickfont=dict(color="#94A3B8")),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(size=11, color="#94a3b8")),
+            yaxis=dict(showgrid=False, tickfont=dict(color="#64748B")),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(size=11, color="#64748B")),
         )
         st.plotly_chart(fig_att, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1577,13 +1652,13 @@ if st.session_state.report:
 
             fig_adtech = px.bar(
                 adtech_df, x="Nb sites", y="Technologie", orientation="h",
-                color_discrete_sequence=["#4edea3"],
+                color_discrete_sequence=["#3B82F6"],
             )
             fig_adtech.update_layout(
                 **PLOTLY_LAYOUT, showlegend=False,
                 margin=dict(t=10, b=10, l=10, r=10),
                 height=max(200, len(adtech_counts) * 35 + 40),
-                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#94A3B8")),
+                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#64748B")),
             )
             st.plotly_chart(fig_adtech, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1604,13 +1679,13 @@ if st.session_state.report:
 
         fig_geo = px.bar(
             geo_df, x="Nombre", y="Pays", orientation="h",
-            color_discrete_sequence=["#4edea3"],
+            color_discrete_sequence=["#3B82F6"],
         )
         fig_geo.update_layout(
             **PLOTLY_LAYOUT, showlegend=False,
             margin=dict(t=10, b=10, l=10, r=10),
             height=max(200, len(country_counts) * 35 + 40),
-            xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#94A3B8")),
+            xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#64748B")),
         )
         st.plotly_chart(fig_geo, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1636,13 +1711,13 @@ if st.session_state.report:
 
             fig_ssp = px.bar(
                 ssp_df, x="Nb sites", y="SSP", orientation="h",
-                color_discrete_sequence=["#4edea3"],
+                color_discrete_sequence=["#3B82F6"],
             )
             fig_ssp.update_layout(
                 **PLOTLY_LAYOUT, showlegend=False,
                 margin=dict(t=10, b=10, l=10, r=10),
                 height=max(200, len(top_ssps) * 35 + 40),
-                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#94A3B8")),
+                xaxis=PLOTLY_AXIS, yaxis=dict(showgrid=False, tickfont=dict(color="#64748B")),
             )
             st.plotly_chart(fig_ssp, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1816,7 +1891,7 @@ if st.session_state.report:
                 lat, lon = COUNTRY_COORDS[cc]
 
                 # Find audit action for color
-                action_color = "#4edea3"  # default keep
+                action_color = "#22C55E"  # default keep
                 for a in report.results:
                     if a.domain == domain_name:
                         if a.action in (CleanAction.REMOVE_DEAD, CleanAction.REMOVE_MFA):
@@ -1847,7 +1922,7 @@ if st.session_state.report:
                 fig_map = go.Figure()
 
                 # Group by color for legend
-                color_labels = {"#4edea3": "Sain", "#EF4444": "A supprimer", "#F97316": "Attention faible"}
+                color_labels = {"#22C55E": "Sain", "#EF4444": "A supprimer", "#F97316": "Attention faible"}
                 for color, label in color_labels.items():
                     subset = map_df[map_df["color"] == color]
                     if subset.empty:
@@ -1861,18 +1936,18 @@ if st.session_state.report:
                             size=subset["size"],
                             color=color,
                             opacity=0.85,
-                            line=dict(width=0.5, color="rgba(255,255,255,0.1)"),
+                            line=dict(width=0.5, color="rgba(0,0,0,0.1)"),
                         ),
                         name=label,
                     ))
 
                 fig_map.update_geos(
                     projection_type="natural earth",
-                    landcolor="#161c25",
-                    oceancolor="#090e17",
-                    lakecolor="#090e17",
-                    coastlinecolor="#3c4a42",
-                    countrycolor="#3c4a42",
+                    landcolor="#F1F5F9",
+                    oceancolor="#DBEAFE",
+                    lakecolor="#DBEAFE",
+                    coastlinecolor="#CBD5E1",
+                    countrycolor="#E2E8F0",
                     bgcolor="rgba(0,0,0,0)",
                     showframe=False,
                     showcoastlines=True,
@@ -1885,7 +1960,7 @@ if st.session_state.report:
                     legend=dict(
                         orientation="h", yanchor="bottom", y=-0.05,
                         xanchor="center", x=0.5,
-                        font=dict(size=11, color="#94a3b8"),
+                        font=dict(size=11, color="#64748B"),
                     ),
                     geo=dict(bgcolor="rgba(0,0,0,0)"),
                 )

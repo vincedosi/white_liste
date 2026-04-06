@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef } from 'react';
 import type { AuditRequest } from '@/lib/types';
 
-const API_BASE = '/api';
+// Direct backend URL — Next.js rewrite proxy buffers SSE, so bypass it.
+const BACKEND_URL = 'http://localhost:8002/api';
 
 export interface AuditStreamState {
   logs: string[];
@@ -15,7 +16,7 @@ export interface AuditStreamState {
 }
 
 export interface UseAuditStreamReturn extends AuditStreamState {
-  startAudit: (request: AuditRequest) => Promise<void>;
+  startAudit: (request: AuditRequest) => void;
 }
 
 export function useAuditStream(): UseAuditStreamReturn {
@@ -25,9 +26,9 @@ export function useAuditStream(): UseAuditStreamReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [auditId, setAuditId] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
 
-  const startAudit = useCallback(async (request: AuditRequest) => {
+  const startAudit = useCallback((request: AuditRequest) => {
     // Reset state
     setLogs([]);
     setCurrentStep('');
@@ -36,134 +37,122 @@ export function useAuditStream(): UseAuditStreamReturn {
     setAuditId(null);
     setIsRunning(true);
 
-    // Abort any previous stream
-    if (abortRef.current) {
-      abortRef.current.abort();
+    // Abort any previous request
+    if (xhrRef.current) {
+      xhrRef.current.abort();
     }
-    const controller = new AbortController();
-    abortRef.current = controller;
 
-    try {
-      const response = await fetch(`${API_BASE}/audit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      });
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+    let processed = 0; // how many chars we've already parsed
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: response.statusText }));
-        throw new Error(err.detail || `HTTP ${response.status}`);
-      }
+    xhr.open('POST', `${BACKEND_URL}/audit`);
+    xhr.setRequestHeader('Content-Type', 'application/json');
 
-      if (!response.body) {
-        throw new Error('Response body is null — streaming not supported');
-      }
+    // Process SSE chunks as they arrive
+    xhr.onprogress = () => {
+      const text = xhr.responseText;
+      const newText = text.slice(processed);
+      processed = text.length;
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let currentEvent = '';
+      if (!newText) return;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      // Parse SSE lines
+      const lines = newText.split('\n');
+      let currentEvt = '';
 
-        buffer += decoder.decode(value, { stream: true });
+      for (const line of lines) {
+        const trimmed = line.trim();
 
-        // Split on newlines; keep the last incomplete line in the buffer
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        if (trimmed === '') {
+          currentEvt = '';
+          continue;
+        }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
+        if (trimmed.startsWith('event:')) {
+          currentEvt = trimmed.slice(6).trim();
+          continue;
+        }
 
-          if (trimmed === '') {
-            // Empty line = end of SSE message, reset event type
-            currentEvent = '';
-            continue;
-          }
+        if (trimmed.startsWith('data:')) {
+          const rawData = trimmed.slice(5).trim();
 
-          if (trimmed.startsWith('event:')) {
-            currentEvent = trimmed.slice(6).trim();
-            continue;
-          }
-
-          if (trimmed.startsWith('data:')) {
-            const rawData = trimmed.slice(5).trim();
-
-            switch (currentEvent) {
-              case 'log': {
-                // Log lines can be plain text or JSON
-                try {
-                  const parsed = JSON.parse(rawData);
-                  const msg = parsed.message || parsed.msg || rawData;
-                  setLogs((prev) => [...prev, msg]);
-                } catch {
-                  setLogs((prev) => [...prev, rawData]);
-                }
-                break;
+          switch (currentEvt) {
+            case 'log': {
+              try {
+                const parsed = JSON.parse(rawData);
+                const msg = parsed.message || parsed.msg || rawData;
+                setLogs((prev) => [...prev, msg]);
+              } catch {
+                setLogs((prev) => [...prev, rawData]);
               }
-
-              case 'step': {
-                try {
-                  const parsed = JSON.parse(rawData);
-                  setCurrentStep(parsed.step || rawData);
-                } catch {
-                  setCurrentStep(rawData);
-                }
-                break;
-              }
-
-              case 'complete': {
-                try {
-                  const parsed = JSON.parse(rawData);
-                  setResults(parsed.results ?? parsed);
-                  setAuditId(parsed.audit_id ?? parsed.id ?? null);
-                } catch {
-                  // If data is just an audit ID string
-                  setAuditId(rawData || null);
-                }
-                setIsRunning(false);
-                break;
-              }
-
-              case 'error': {
-                try {
-                  const parsed = JSON.parse(rawData);
-                  setError(parsed.message || parsed.detail || rawData);
-                } catch {
-                  setError(rawData);
-                }
-                setIsRunning(false);
-                break;
-              }
-
-              default:
-                // Unknown event or no event prefix — treat as log
-                break;
+              break;
             }
 
-            // Reset event after processing data
-            currentEvent = '';
+            case 'step': {
+              try {
+                const parsed = JSON.parse(rawData);
+                setCurrentStep(parsed.step || rawData);
+              } catch {
+                setCurrentStep(rawData);
+              }
+              break;
+            }
+
+            case 'complete': {
+              try {
+                const parsed = JSON.parse(rawData);
+                setResults(parsed.results ?? parsed);
+                setAuditId(parsed.audit_id ?? parsed.id ?? null);
+              } catch {
+                setAuditId(rawData || null);
+              }
+              setIsRunning(false);
+              break;
+            }
+
+            case 'error': {
+              try {
+                const parsed = JSON.parse(rawData);
+                setError(parsed.message || parsed.detail || rawData);
+              } catch {
+                setError(rawData);
+              }
+              setIsRunning(false);
+              break;
+            }
+
+            case 'heartbeat':
+              break;
+
+            default:
+              break;
           }
+
+          currentEvt = '';
         }
       }
+    };
 
-      // Stream ended — if still running, mark as complete
-      setIsRunning((prev) => {
-        if (prev) return false;
-        return prev;
-      });
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        // Intentional abort, do nothing
-        return;
-      }
-      const message = err instanceof Error ? err.message : 'Erreur inconnue';
-      setError(message);
+    xhr.onload = () => {
+      // Stream finished — ensure we mark as done
       setIsRunning(false);
-    }
+    };
+
+    xhr.onerror = () => {
+      setError('Erreur de connexion au serveur');
+      setIsRunning(false);
+    };
+
+    xhr.ontimeout = () => {
+      setError('Timeout — le serveur ne repond pas');
+      setIsRunning(false);
+    };
+
+    // No timeout — audits can take 30+ minutes
+    xhr.timeout = 0;
+
+    xhr.send(JSON.stringify(request));
   }, []);
 
   return { logs, currentStep, results, isRunning, error, auditId, startAudit };

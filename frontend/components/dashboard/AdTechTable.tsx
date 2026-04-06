@@ -43,13 +43,13 @@ export function AdTechTable({ data, onDomainClick }: AdTechTableProps) {
             {data.map((row) => (
               <tr
                 key={row.domain}
-                className="border-t border-outline/10 bg-surface-low hover:bg-surface-mid transition-colors"
+                className="border-t border-outline-light bg-white hover:bg-surface-mid transition-colors"
               >
                 <td className="px-4 py-2.5">
                   <button
                     type="button"
                     onClick={() => onDomainClick?.(row.domain)}
-                    className="font-mono text-sm text-primary hover:text-primary/80 hover:underline transition-colors text-left"
+                    className="font-mono text-sm text-primary hover:text-primary-dim hover:underline transition-colors text-left"
                   >
                     {row.domain}
                   </button>

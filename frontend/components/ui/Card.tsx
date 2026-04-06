@@ -10,14 +10,13 @@ export function Card({ children, className, hover = false }: CardProps) {
   return (
     <div
       className={clsx(
-        'bg-surface-low rounded-xl',
-        'border border-outline/15',
-        'border-t border-t-white/[0.04]',
+        'bg-white rounded-2xl',
+        'border border-outline',
         'p-5',
+        'shadow-card',
         hover && [
           'transition-all duration-200',
-          'hover:border-primary/20',
-          'hover:shadow-[0_0_20px_-8px_rgba(78,222,163,0.1)]',
+          'hover:shadow-card-hover hover:-translate-y-0.5',
         ],
         className,
       )}
