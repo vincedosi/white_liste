@@ -159,3 +159,90 @@ async def execute_returning(query: str, params: tuple = ()) -> dict | None:
     await db.commit()
     row = await cursor.fetchone()
     return dict(row) if row else None
+
+
+async def migrate_json_audits() -> None:
+    """Import existing output/history/*.json files into audits table.
+    Creates a 'Default' workspace owned by the first admin user.
+    Only runs once (checks _migrations table)."""
+    import json as json_mod
+
+    db = await get_db()
+    cursor = await db.execute("SELECT key FROM _migrations WHERE key = 'migrate_json'")
+    if await cursor.fetchone():
+        return
+
+    history_dir = Path(__file__).parent.parent / "output" / "history"
+    if not history_dir.exists():
+        await db.execute("INSERT INTO _migrations (key, done_at) VALUES (?, ?)", ("migrate_json", _now()))
+        await db.commit()
+        return
+
+    json_files = list(history_dir.glob("*.json"))
+    if not json_files:
+        await db.execute("INSERT INTO _migrations (key, done_at) VALUES (?, ?)", ("migrate_json", _now()))
+        await db.commit()
+        return
+
+    # Find first admin user as workspace owner
+    admin = await fetch_one("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
+    if not admin:
+        admin = await fetch_one("SELECT id FROM users LIMIT 1")
+    if not admin:
+        return
+
+    owner_id = admin["id"]
+
+    # Create Default workspace
+    ws_id = _uuid()
+    now = _now()
+    await db.execute(
+        "INSERT INTO workspaces (id, name, slug, config_json, onboarding_done, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (ws_id, "Default", "default", "{}", 1, owner_id, now),
+    )
+    await db.execute(
+        "INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+        (ws_id, owner_id, "owner", now),
+    )
+
+    # Also add non-admin users to Default workspace
+    all_users = await fetch_all("SELECT id FROM users WHERE id != ?", (owner_id,))
+    for u in all_users:
+        await db.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+            (ws_id, u["id"], "editor", now),
+        )
+
+    # Import each JSON audit
+    imported = 0
+    for json_path in json_files:
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json_mod.load(f)
+
+            audit_id = data.get("audit_id") or json_path.stem
+            client_label = data.get("client_name") or data.get("client") or "Imported"
+            stats = data.get("stats", {})
+            results = data.get("results", [])
+            log = data.get("log", [])
+            audit_date = data.get("audit_date", now)
+            domain_count = stats.get("total", len(results))
+
+            await db.execute(
+                """INSERT OR IGNORE INTO audits
+                (id, workspace_id, launched_by, client_label, status, domain_count,
+                 stats_json, results_json, log_json, created_at, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    audit_id, ws_id, owner_id, client_label, "completed", domain_count,
+                    json_mod.dumps(stats), json_mod.dumps(results), json_mod.dumps(log),
+                    audit_date, audit_date,
+                ),
+            )
+            imported += 1
+        except Exception as e:
+            print(f"[MLI] Skipping {json_path.name}: {e}")
+
+    await db.execute("INSERT INTO _migrations (key, done_at) VALUES (?, ?)", ("migrate_json", _now()))
+    await db.commit()
+    print(f"[MLI] Migrated {imported} audits into workspace 'Default'")

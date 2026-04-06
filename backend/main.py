@@ -40,6 +40,8 @@ app.add_middleware(
 async def startup():
     await init_db()
     await seed_users()
+    from db import migrate_json_audits
+    await migrate_json_audits()
 
 
 @app.on_event("shutdown")
