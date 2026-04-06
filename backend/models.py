@@ -174,3 +174,79 @@ class AuditReport(BaseModel):
             if r.health.is_alive:
                 cats[r.categorization.category] = cats.get(r.categorization.category, 0) + 1
         self.category_distribution = dict(sorted(cats.items(), key=lambda x: x[1], reverse=True))
+
+
+# ── Workspace & Auth models ──────────────────────────────
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+
+
+class WorkspaceConfig(BaseModel):
+    modules: AuditModules = AuditModules()
+    mfa_threshold: float = 4.0
+    mistral_key_encrypted: str | None = None
+
+
+class WorkspaceOut(BaseModel):
+    id: str
+    name: str
+    slug: str
+    logo_path: str | None = None
+    config: WorkspaceConfig = WorkspaceConfig()
+    onboarding_done: bool = False
+    created_by: str
+    created_at: str
+    member_count: int = 0
+    audit_count: int = 0
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str
+    slug: str | None = None
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    name: str | None = None
+    config: WorkspaceConfig | None = None
+
+
+class MemberOut(BaseModel):
+    user_id: str
+    email: str
+    name: str
+    role: str
+    joined_at: str
+
+
+class InviteRequest(BaseModel):
+    email: str
+    role: str = "editor"
+
+
+class WhitelistOut(BaseModel):
+    id: str
+    workspace_id: str
+    name: str
+    domains: list[str] = []
+    created_by: str
+    created_at: str
+    updated_at: str
+
+
+class WhitelistCreateRequest(BaseModel):
+    name: str
+    domains: list[str]
+
+
+class ActivityOut(BaseModel):
+    id: str
+    workspace_id: str
+    user_id: str
+    user_name: str | None = None
+    action: str
+    detail: dict | None = None
+    created_at: str
