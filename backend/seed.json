@@ -1,0 +1,14 @@
+[
+  {
+    "email": "admin@dentsu.com",
+    "password": "admin123",
+    "name": "Admin Dentsu",
+    "role": "admin"
+  },
+  {
+    "email": "trader@dentsu.com",
+    "password": "trader123",
+    "name": "Trader Demo",
+    "role": "user"
+  }
+]
