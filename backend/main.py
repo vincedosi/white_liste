@@ -12,6 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from routers import audit, history, health
+from db import init_db, close_db
+from auth import seed_users
+from routers.auth_routes import router as auth_router
 
 app = FastAPI(
     title="MLI - Media List Intelligence",
@@ -32,10 +35,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Lifecycle ────────────────────────────────────────────
+@app.on_event("startup")
+async def startup():
+    await init_db()
+    await seed_users()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_db()
+
+
 # ── Routers ──────────────────────────────────────────────
 app.include_router(health.router, tags=["health"])
 app.include_router(audit.router, tags=["audit"])
 app.include_router(history.router, tags=["history"])
+app.include_router(auth_router)
 
 # ── Static files for screenshots ─────────────────────────
 SCREENSHOTS_DIR = Path(__file__).parent.parent / "output" / "screenshots"
