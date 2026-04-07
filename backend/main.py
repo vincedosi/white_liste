@@ -15,6 +15,7 @@ from routers import audit, history, health
 from db import init_db, close_db
 from auth import seed_users
 from routers.auth_routes import router as auth_router
+from routers.workspaces import router as workspaces_router
 
 app = FastAPI(
     title="MLI - Media List Intelligence",
@@ -54,6 +55,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(audit.router, tags=["audit"])
 app.include_router(history.router, tags=["history"])
 app.include_router(auth_router)
+app.include_router(workspaces_router)
 
 # ── Static files for screenshots ─────────────────────────
 SCREENSHOTS_DIR = Path(__file__).parent.parent / "output" / "screenshots"
