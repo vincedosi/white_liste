@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { BarChart3, ArrowRight, Clock, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
+import { BarChart3, ArrowRight, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { getWorkspace, getAudits, getActivity, deleteAudit } from '@/lib/api';
 import type { WorkspaceDetail, AuditSummary, ActivityEntry } from '@/lib/types';
@@ -20,16 +20,6 @@ export default function WorkspaceDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
 
   const handleDelete = async (id: string) => {
     setDeleteLoading(true);
@@ -39,17 +29,6 @@ export default function WorkspaceDashboardPage() {
       setDeleteTarget(null);
     } catch { /* keep dialog open */ }
     finally { setDeleteLoading(false); }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selected.size === 0) return;
-    setBulkDeleting(true);
-    try {
-      await Promise.all(Array.from(selected).map((id) => deleteAudit(id)));
-      setAudits((prev) => prev.filter((a) => !selected.has(a.id)));
-      setSelected(new Set());
-    } catch { /* partial failure */ }
-    finally { setBulkDeleting(false); }
   };
 
   useEffect(() => {
@@ -72,7 +51,7 @@ export default function WorkspaceDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
       </div>
     );
@@ -80,124 +59,202 @@ export default function WorkspaceDashboardPage() {
 
   if (!workspace) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <p className="font-label text-sm text-danger font-extralight">Workspace introuvable</p>
       </div>
     );
   }
 
-  // Compute KPIs from latest audit
-  const latestAudit = audits[0];
+  const latest = audits[0];
   const totalAudits = audits.length;
-  const avgScore = latestAudit?.avg_attention_score ?? null;
-  const sitesAlive = latestAudit?.sites_alive ?? 0;
-  const sitesDead = latestAudit?.sites_dead ?? 0;
+  const avgScore = latest?.avg_attention_score ?? 0;
+  const sitesAlive = latest?.sites_alive ?? 0;
+  const sitesDead = latest?.sites_dead ?? 0;
+  const sitesMfa = latest?.sites_mfa ?? 0;
+  const totalSites = (latest?.total_sites || latest?.domain_count) ?? 0;
+  const healthyPct = totalSites > 0 ? Math.round(((sitesAlive - sitesMfa) / totalSites) * 100) : 0;
+  const mfaPct = totalSites > 0 ? Math.round((sitesMfa / totalSites) * 100) : 0;
+  const deadPct = totalSites > 0 ? Math.round((sitesDead / totalSites) * 100) : 0;
+
+  // Score history for histogram (last 7 audits, chronological order)
+  const scoreHistory = audits.slice(0, 7).map(a => a.avg_attention_score ?? 0).reverse();
+  const maxScore = Math.max(...scoreHistory, 1);
 
   return (
-    <div className="min-h-screen bg-background px-6 lg:px-10 pt-10 pb-10 space-y-10">
-      {/* Header */}
-      <div>
-        <span className="font-label text-[9px] uppercase tracking-[0.3em] text-on-surface-variant font-extralight">
-          Workspace
-        </span>
-        <h1 className="text-3xl font-extralight tracking-tight text-on-surface mt-1">
-          {workspace.name}
-        </h1>
-        <div className="flex items-center gap-3 mt-2 font-label text-[9px] text-on-surface-variant/50 uppercase tracking-wider font-extralight">
-          <span>{workspace.members?.length ?? 1} membres</span>
-          <span className="w-0.5 h-0.5 rounded-full bg-on-surface-variant/30" />
-          <span>{totalAudits} audits</span>
-        </div>
-      </div>
+    <div className="min-h-screen bg-background px-6 lg:px-10 pt-10 pb-16 space-y-12">
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Audits', value: totalAudits, color: undefined },
-          { label: 'Score Moyen', value: avgScore !== null ? avgScore.toFixed(1) : '--', color: avgScore && avgScore >= 7 ? '#00fc40' : avgScore && avgScore >= 4 ? '#F59E0B' : '#ff716c' },
-          { label: 'Sites Actifs', value: sitesAlive, color: '#00fc40' },
-          { label: 'Sites Morts', value: sitesDead, color: '#ff716c' },
-        ].map((kpi) => (
-          <div key={kpi.label} className="glass-card rounded-2xl p-5 glow-card">
-            <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
-              {kpi.label}
-            </span>
-            <p
-              className="text-3xl font-extralight tracking-tighter text-on-surface mt-2 glow-blue"
-              style={kpi.color ? { color: kpi.color } : undefined}
-            >
-              {kpi.value}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Recent audits */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
+      {/* ═══ Hero KPI ═══ */}
+      <section className="space-y-8 animate-fade-up">
+        <div className="flex flex-col space-y-2">
           <span className="font-label text-[9px] uppercase tracking-[0.3em] text-on-surface-variant font-extralight">
-            Derniers audits
+            {workspace.name} · Score moyen
+          </span>
+          <div className="relative inline-block">
+            <div className="absolute -inset-10 bg-primary-electric/10 blur-[80px] rounded-full" />
+            <div className="flex items-baseline relative">
+              <span className="text-[6rem] font-extralight leading-none tracking-tighter text-on-surface glow-blue">
+                {avgScore > 0 ? avgScore.toFixed(1) : '—'}
+              </span>
+              <span className="text-accent text-xl font-extralight align-top ml-2 tracking-widest">/10</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 font-label text-[9px] text-on-surface-variant/50 uppercase tracking-wider font-extralight">
+            <span>{workspace.members?.length ?? 1} membres</span>
+            <span className="w-0.5 h-0.5 rounded-full bg-on-surface-variant/30" />
+            <span>{totalAudits} audits</span>
+            <span className="w-0.5 h-0.5 rounded-full bg-on-surface-variant/30" />
+            <span>{totalSites} sites</span>
+          </div>
+        </div>
+
+        {/* Big number comparison */}
+        <div className="grid grid-cols-2 gap-8 pt-4">
+          <div className="space-y-1">
+            <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">Sites Actifs</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extralight tracking-tight text-on-surface">{sitesAlive}</span>
+              <span className="text-secondary text-[10px] font-extralight tracking-widest">{healthyPct}%</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">Sites Morts</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-4xl font-extralight tracking-tight text-on-surface">{sitesDead}</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-danger shadow-[0_0_15px_rgba(255,113,108,0.6)]" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Bento Grid ═══ */}
+      <section className="grid grid-cols-2 gap-4 animate-fade-up delay-1">
+
+        {/* Donut card */}
+        <div className="glass-card rounded-2xl p-5 flex flex-col items-center justify-center space-y-4 glow-card">
+          <div className="relative w-20 h-20">
+            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="8" />
+              <circle
+                cx="50" cy="50" r="40" fill="none"
+                stroke="url(#gradient-donut)" strokeWidth="8"
+                strokeDasharray={`${healthyPct * 2.51} ${251 - healthyPct * 2.51}`}
+                strokeLinecap="round"
+              />
+              <defs>
+                <linearGradient id="gradient-donut" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#0066ff" />
+                  <stop offset="50%" stopColor="#00e5ff" />
+                  <stop offset="100%" stopColor="#00fc40" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="font-label text-[10px] font-extralight tracking-widest text-on-surface">{healthyPct}%</span>
+            </div>
+          </div>
+          <span className="font-label text-[8px] uppercase tracking-[0.2em] text-on-surface-variant text-center leading-relaxed font-extralight">
+            Sites<br />Sains
+          </span>
+        </div>
+
+        {/* Mini bar chart — Sains / MFA / Morts */}
+        <div className="glass-card rounded-2xl p-5 space-y-4 glow-card">
+          <div className="h-20 flex items-end gap-3 px-2">
+            {[
+              { label: 'Sains', pct: healthyPct, color: '#00fc40' },
+              { label: 'MFA',   pct: mfaPct,     color: '#F59E0B' },
+              { label: 'Morts', pct: deadPct,     color: '#ff716c' },
+            ].map(b => (
+              <div
+                key={b.label}
+                className="flex-1 bg-white/[0.03] rounded-t-full overflow-hidden relative"
+                style={{ height: `${Math.max(b.pct, 5)}%` }}
+              >
+                <div
+                  className="absolute bottom-0 w-full rounded-t-full"
+                  style={{ height: '100%', backgroundColor: b.color, opacity: 0.6 }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-around">
+            {['Sains', 'MFA', 'Morts'].map(l => (
+              <span key={l} className="font-label text-[7px] uppercase tracking-[0.15em] text-on-surface-variant font-extralight">{l}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* Full-width — Infrastructure Health progress bars */}
+        <div className="col-span-2 glass-card rounded-2xl p-6 space-y-8 glow-card">
+          <div className="flex justify-between items-center">
+            <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
+              Sante de la whitelist
+            </span>
+            {totalAudits > 0 && (
+              <span className="text-accent text-[9px] font-label font-extralight px-3 py-0.5 border border-accent/20 rounded-full tracking-widest">
+                {totalAudits} AUDITS
+              </span>
+            )}
+          </div>
+          <div className="space-y-6">
+            {[
+              { label: 'Score Moyen',  value: `${avgScore > 0 ? avgScore.toFixed(1) : '—'}/10`, pct: avgScore * 10 },
+              { label: 'Sites Sains',  value: `${healthyPct}%`,                                  pct: healthyPct  },
+              { label: 'Taux MFA',     value: `${mfaPct}%`,                                       pct: mfaPct      },
+            ].map(bar => (
+              <div key={bar.label} className="space-y-3">
+                <div className="flex justify-between font-label text-[9px] text-on-surface-variant uppercase tracking-[0.1em] font-extralight">
+                  <span>{bar.label}</span>
+                  <span className="text-on-surface">{bar.value}</span>
+                </div>
+                <div className="h-[3px] w-full bg-white/[0.03] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-fluid rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.min(bar.pct, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Recent audits feed ═══ */}
+      <section className="space-y-6 animate-fade-up delay-2">
+        <div className="flex justify-between items-end px-1">
+          <span className="font-label text-[10px] font-extralight tracking-[0.3em] uppercase text-on-surface">
+            Derniers Audits
           </span>
           <button
             onClick={() => router.push(`/workspaces/${wsId}/audit/new`)}
-            className="font-label text-[9px] text-accent uppercase tracking-[0.2em] font-extralight hover:text-accent/70 transition-colors"
+            className="text-accent text-[10px] font-label uppercase tracking-widest font-extralight flex items-center gap-1"
           >
-            Nouvel audit
+            <Plus size={12} /> Nouveau
           </button>
         </div>
 
         {audits.length === 0 ? (
-          <div className="glass-card rounded-2xl p-10 text-center">
-            <p className="font-label text-xs text-on-surface-variant font-extralight">Aucun audit pour le moment.</p>
+          <div className="glass-card rounded-2xl p-10 text-center glow-card">
+            <p className="font-label text-xs text-on-surface-variant font-extralight mb-4">Aucun audit pour le moment.</p>
             <button
               onClick={() => router.push(`/workspaces/${wsId}/audit/new`)}
-              className="mt-4 h-10 px-6 rounded-xl bg-primary-electric text-white font-label text-xs uppercase tracking-[0.15em] hover:shadow-glow-blue transition-all"
+              className="h-10 px-6 rounded-xl bg-primary-electric text-white font-label text-xs uppercase tracking-[0.15em] hover:shadow-glow-blue transition-all"
             >
               Lancer le premier audit
             </button>
           </div>
         ) : (
-          <>
-          {/* Bulk actions */}
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 mb-3 px-1">
-              <button
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1.5 h-7 px-3 text-[11px] font-medium uppercase tracking-wide rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40"
-              >
-                <Trash2 size={12} />
-                {bulkDeleting ? 'Suppression...' : `Supprimer (${selected.size})`}
-              </button>
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-[10px] text-on-surface-variant hover:text-on-surface transition-colors"
-              >
-                Deselectionner
-              </button>
-            </div>
-          )}
-
           <div className="space-y-2">
-            {audits.slice(0, 10).map((audit) => (
+            {audits.slice(0, 5).map((audit) => (
               <div
                 key={audit.id}
                 className={clsx(
-                  'flex items-center gap-3 p-4 glass-card rounded-2xl hover:border-white/[0.08] transition-all group',
-                  selected.has(audit.id) && 'ring-1 ring-accent/30',
+                  'flex items-center gap-2 glass-card rounded-2xl transition-all group',
+                  audit.status === 'completed' ? 'border-l border-l-accent/40' : 'border-l border-l-white/10',
                 )}
               >
-                {/* Checkbox */}
-                <input
-                  type="checkbox"
-                  checked={selected.has(audit.id)}
-                  onChange={() => toggleSelect(audit.id)}
-                  className="w-3.5 h-3.5 rounded border-white/20 accent-accent cursor-pointer flex-shrink-0"
-                />
-
-                {/* Click to navigate */}
-                <div
-                  className="flex items-center justify-between flex-1 cursor-pointer"
+                <button
+                  className="flex items-center justify-between flex-1 p-4 text-left"
                   onClick={() => router.push(`/workspaces/${wsId}/audit/${audit.id}`)}
                 >
                   <div className="flex items-center gap-4">
@@ -220,12 +277,12 @@ export default function WorkspaceDashboardPage() {
                     </span>
                     <ArrowRight size={12} className="text-on-surface-variant/30 group-hover:text-accent/50 transition-colors" />
                   </div>
-                </div>
+                </button>
 
                 {/* Delete button */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setDeleteTarget(audit.id); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg text-on-surface-variant/30 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
+                  className="flex items-center justify-center w-8 h-8 mr-3 rounded-lg text-on-surface-variant/30 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100 flex-shrink-0"
                   title="Supprimer"
                 >
                   <Trash2 size={14} />
@@ -233,17 +290,52 @@ export default function WorkspaceDashboardPage() {
               </div>
             ))}
           </div>
-          </>
         )}
-      </div>
+      </section>
 
-      {/* Activity */}
+      {/* ═══ Score histogram ═══ */}
+      {scoreHistory.length > 1 && (
+        <section className="glass-card rounded-2xl p-6 space-y-8 overflow-hidden glow-card animate-fade-up delay-3">
+          <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
+            Historique des scores ({scoreHistory.length} audits)
+          </span>
+          <div className="flex items-end justify-between h-32 gap-3">
+            {scoreHistory.map((score, i) => {
+              const height = maxScore > 0 ? (score / maxScore) * 100 : 0;
+              const isMax = score === maxScore;
+              return (
+                <div
+                  key={i}
+                  className="w-full bg-white/[0.03] rounded-t-full relative overflow-hidden"
+                  style={{ height: `${Math.max(height, 8)}%` }}
+                >
+                  <div className="absolute inset-0 bg-primary-electric opacity-5 rounded-t-full" />
+                  <div
+                    className={clsx(
+                      'absolute bottom-0 w-full rounded-t-full transition-all',
+                      isMax
+                        ? 'bg-gradient-fluid shadow-[0_-10px_25px_rgba(0,102,255,0.4)]'
+                        : 'bg-primary-electric/40',
+                    )}
+                    style={{ height: `${Math.max(height, 10)}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between font-label text-[8px] text-white/20 uppercase tracking-[0.2em] font-extralight">
+            {scoreHistory.map((s, i) => <span key={i}>{s.toFixed(1)}</span>)}
+          </div>
+        </section>
+      )}
+
+      {/* ═══ Activity feed ═══ */}
       {activity.length > 0 && (
-        <div>
-          <span className="font-label text-[9px] uppercase tracking-[0.3em] text-on-surface-variant font-extralight mb-4 block">
+        <section className="space-y-4 animate-fade-up delay-4">
+          <span className="font-label text-[9px] uppercase tracking-[0.3em] text-on-surface-variant font-extralight">
             Activite recente
           </span>
-          <div className="glass-card rounded-2xl p-5 space-y-3">
+          <div className="glass-card rounded-2xl p-5 space-y-3 glow-card">
             {activity.map((a) => (
               <div key={a.id} className="flex items-center gap-3 text-[11px] font-extralight">
                 <div className="w-1 h-1 rounded-full bg-accent/40 flex-shrink-0" />
@@ -255,9 +347,10 @@ export default function WorkspaceDashboardPage() {
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
-      {/* Delete confirmation dialog */}
+
+      {/* ═══ Delete confirmation dialog ═══ */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="glass-card rounded-2xl p-6 max-w-sm w-full mx-4">
