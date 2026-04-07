@@ -23,47 +23,41 @@ export function AuditProgress({ isRunning, currentStep, logs, error }: AuditProg
   const currentIndex = PIPELINE_STEPS.findIndex((s) => s.key === currentStep);
 
   return (
-    <div className="bg-white rounded-2xl border border-outline shadow-card p-5 mt-6">
-      {/* Step dots */}
-      <div className="mb-5">
-        <div className="flex items-center gap-0.5">
-          {PIPELINE_STEPS.map((step, i) => {
-            const isDone = currentIndex > i || (!isRunning && !error && currentIndex >= 0);
-            const isActive = isRunning && currentIndex === i;
-            const isPending = currentIndex < i || currentIndex === -1;
-
-            return (
-              <div key={step.key} className="flex items-center flex-1 min-w-0">
-                <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-                  <div className={clsx(
-                    'w-2.5 h-2.5 rounded-full transition-all duration-300',
-                    isDone && 'bg-primary shadow-[0_0_6px_rgba(37,99,235,0.4)]',
-                    isActive && 'bg-accent animate-pulse shadow-[0_0_10px_rgba(14,165,233,0.5)]',
-                    isPending && 'bg-surface-deepest',
-                  )} />
-                  <span className={clsx(
-                    'text-[9px] font-mono whitespace-nowrap transition-colors uppercase tracking-wider',
-                    isDone && 'text-primary',
-                    isActive && 'text-accent font-semibold',
-                    isPending && 'text-dim/40',
-                  )}>
-                    {step.label}
-                  </span>
-                </div>
-                {i < PIPELINE_STEPS.length - 1 && (
-                  <div className={clsx(
-                    'flex-1 h-px mx-1 transition-colors duration-300',
-                    isDone ? 'bg-primary/30' : 'bg-surface-deepest',
-                  )} />
-                )}
+    <div className="glass-card rounded-2xl p-6 glow-card space-y-6">
+      {/* Steps */}
+      <div className="flex items-center gap-0.5">
+        {PIPELINE_STEPS.map((step, i) => {
+          const isDone = currentIndex > i || (!isRunning && !error && currentIndex >= 0);
+          const isActive = isRunning && currentIndex === i;
+          const isPending = currentIndex < i || currentIndex === -1;
+          return (
+            <div key={step.key} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <div className={clsx(
+                  'w-2 h-2 rounded-full transition-all duration-300',
+                  isDone && 'bg-gradient-fluid shadow-[0_0_8px_rgba(0,102,255,0.5)]',
+                  isActive && 'bg-accent animate-pulse shadow-[0_0_15px_rgba(0,229,255,0.6)]',
+                  isPending && 'bg-white/[0.06]',
+                )} />
+                <span className={clsx(
+                  'font-label text-[8px] uppercase tracking-[0.2em] whitespace-nowrap font-extralight',
+                  isDone && 'text-accent',
+                  isActive && 'text-accent',
+                  isPending && 'text-white/20',
+                )}>
+                  {step.label}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              {i < PIPELINE_STEPS.length - 1 && (
+                <div className={clsx('flex-1 h-px mx-1', isDone ? 'bg-accent/30' : 'bg-white/[0.04]')} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {error && (
-        <div className="mb-4 px-3 py-2.5 rounded-xl bg-danger-light border border-danger/15 text-danger text-xs font-mono">
+        <div className="px-4 py-2.5 rounded-xl bg-danger/5 border border-danger/15 font-label text-xs text-danger font-light">
           {error}
         </div>
       )}

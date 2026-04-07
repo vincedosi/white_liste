@@ -63,12 +63,18 @@ class HealthResult(BaseModel):
 
     @property
     def is_alive(self) -> bool:
-        return self.status in (SiteStatus.OK, SiteStatus.REDIRECT)
+        """A site is alive if the server responds, even with 4xx (bot protection, paywalls)."""
+        if self.status in (SiteStatus.OK, SiteStatus.REDIRECT, SiteStatus.CLIENT_ERROR):
+            return True
+        # Server error (5xx) — server is up but broken, still try to crawl
+        if self.status == SiteStatus.SERVER_ERROR:
+            return True
+        return False
 
 
 class AttentionResult(BaseModel):
     ad_count: int = 0
-    score: float = 10.0
+    score: float | None = None  # None = not scored (dead site)
     is_mfa: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
@@ -112,10 +118,12 @@ class SiteAudit(BaseModel):
         if not self.health.is_alive:
             self.action = CleanAction.REMOVE_DEAD
             self.action_reason = f"{self.health.status.value} (HTTP {self.health.http_code or 'N/A'})"
+            # Dead sites have no score
+            self.attention = AttentionResult(score=None, ad_count=0, is_mfa=False)
         elif self.attention.is_mfa:
             self.action = CleanAction.REMOVE_MFA
             self.action_reason = f"MFA detected -- {self.attention.ad_count} ads, score {self.attention.score:.1f}/10"
-        elif self.attention.score < 6.0:
+        elif self.attention.score is not None and self.attention.score < 6.0:
             self.action = CleanAction.FLAG_LOW_ATTENTION
             self.action_reason = f"Low attention -- score {self.attention.score:.1f}/10"
         else:
@@ -133,7 +141,7 @@ class SiteAudit(BaseModel):
             "final_url": self.health.final_url,
             "is_alive": self.health.is_alive,
             "ad_count": self.attention.ad_count,
-            "attention_score": round(self.attention.score, 1),
+            "attention_score": round(self.attention.score, 1) if self.attention.score is not None else None,
             "is_mfa": self.attention.is_mfa,
             "category": self.categorization.category,
             "ai_confidence": round(self.categorization.confidence, 2),
@@ -164,7 +172,7 @@ class AuditReport(BaseModel):
         self.sites_mfa = sum(1 for r in self.results if r.action == CleanAction.REMOVE_MFA)
         self.sites_flagged = sum(1 for r in self.results if r.action == CleanAction.FLAG_LOW_ATTENTION)
 
-        alive_scores = [r.attention.score for r in self.results if r.health.is_alive]
+        alive_scores = [r.attention.score for r in self.results if r.health.is_alive and r.attention.score is not None]
         self.avg_attention_score = round(
             sum(alive_scores) / len(alive_scores), 1
         ) if alive_scores else 0.0

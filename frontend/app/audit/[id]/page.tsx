@@ -234,7 +234,7 @@ export default function AuditResultPage() {
       <div className="min-h-screen p-6 lg:p-10 lg:pt-8">
         <PageHeader auditId={auditId} />
         <Card className="flex flex-col items-center justify-center py-20 text-center">
-          <Loader2 size={28} className="text-primary animate-spin mb-5" />
+          <Loader2 size={28} className="text-accent animate-spin mb-5" />
           <h2 className="text-base font-semibold text-on-surface mb-1.5">
             Chargement...
           </h2>
@@ -274,7 +274,7 @@ export default function AuditResultPage() {
         <KpiCard
           label="Sites audites"
           value={audit.summary.total}
-          color="#1D4ED8"
+          color="#339dff"
           subtitle={`Client: ${audit.client}`}
         />
         <KpiCard
@@ -293,7 +293,7 @@ export default function AuditResultPage() {
         <KpiCard
           label="Sites sains"
           value={healthCounts.healthy}
-          color="#22C55E"
+          color="#00fc40"
           delta={
             audit.summary.total > 0
               ? {
@@ -309,7 +309,7 @@ export default function AuditResultPage() {
           color={
             avgScore !== null
               ? avgScore >= 7
-                ? '#22C55E'
+                ? '#00fc40'
                 : avgScore >= 4
                   ? '#F97316'
                   : '#EF4444'
@@ -342,7 +342,7 @@ export default function AuditResultPage() {
       {attentionData.length > 0 && <AttentionBar data={attentionData} />}
 
       {/* Tabs */}
-      <div className="bg-surface-low rounded-xl p-1 flex gap-1 overflow-x-auto">
+      <div className="bg-surface-container rounded-xl p-1 flex gap-1 overflow-x-auto">
         {TABS.map((tab, i) => (
           <button
             key={tab}
@@ -351,7 +351,7 @@ export default function AuditResultPage() {
             className={clsx(
               'px-4 py-2 rounded-lg font-mono text-xs tracking-wide whitespace-nowrap transition-all',
               activeTab === i
-                ? 'bg-surface-high text-primary font-medium'
+                ? 'bg-white/[0.06] text-accent font-medium'
                 : 'text-muted hover:text-on-surface hover:bg-surface-mid/50',
             )}
           >
@@ -402,7 +402,7 @@ function PageHeader({
     <div className="mb-2">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 border border-primary/20">
-          <BarChart3 size={16} className="text-primary" />
+          <BarChart3 size={16} className="text-accent" />
         </div>
         <h1 className="text-2xl font-sans font-bold tracking-tight text-on-surface">
           Resultats de l&apos;audit
@@ -429,8 +429,8 @@ function PageHeader({
 
 function MethodologyPanel() {
   const scoreRanges = [
-    { range: '9 – 10', label: 'Page clean', desc: 'Experience premium, publicite minimale', color: '#22C55E' },
-    { range: '7 – 8', label: 'Acceptable', desc: 'Standard editeur, encombrement modere', color: '#22C55E' },
+    { range: '9 – 10', label: 'Page clean', desc: 'Experience premium, publicite minimale', color: '#00fc40' },
+    { range: '7 – 8', label: 'Acceptable', desc: 'Standard editeur, encombrement modere', color: '#00fc40' },
     { range: '5 – 6', label: 'Page chargee', desc: 'Attention reduite, pression publicitaire notable', color: '#F97316' },
     { range: '3 – 4', label: 'Forte pression', desc: 'Experience degradee, risque MFA', color: '#EF4444' },
     { range: '0 – 2', label: 'MFA', desc: 'Made For Advertising — a supprimer', color: '#EF4444' },
@@ -466,7 +466,7 @@ function MethodologyPanel() {
               <div key={pos.name} className="bg-surface-mid rounded-lg p-3 border border-outline/10 text-center">
                 <div className="font-mono text-xs font-bold text-on-surface">{pos.name}</div>
                 <div className="font-mono text-[10px] text-dim mt-1">scroll {pos.pct}</div>
-                <div className="font-mono text-sm font-bold text-primary mt-2">×{pos.weight}</div>
+                <div className="font-mono text-sm font-bold text-accent mt-2">×{pos.weight}</div>
                 <div className="text-[10px] text-muted mt-1">{pos.desc}</div>
               </div>
             ))}
@@ -474,8 +474,8 @@ function MethodologyPanel() {
         </div>
 
         {/* Formula */}
-        <div className="bg-surface-deepest rounded-lg p-4 border border-outline/10">
-          <div className="font-mono text-xs text-primary mb-2">Formule</div>
+        <div className="bg-surface-low rounded-lg p-4 border border-white/[0.05]">
+          <div className="font-mono text-xs text-accent mb-2">Formule</div>
           <div className="font-mono text-sm text-on-surface">
             Score = 10 × (1 - (ratio_ATF × 0.5 + ratio_Mid × 0.3 + ratio_Deep × 0.2))
           </div>
@@ -535,7 +535,7 @@ function JournalPanel({ logs }: { logs: string[] }) {
         {logs.length > 0 && (
           <button
             onClick={handleDownload}
-            className="text-xs font-mono text-primary hover:text-primary-dim transition-colors"
+            className="text-xs font-mono text-accent hover:text-accent-dim transition-colors"
           >
             Telecharger
           </button>
@@ -545,7 +545,7 @@ function JournalPanel({ logs }: { logs: string[] }) {
         {logs.length > 0 ? (
           logs.map((line, i) => (
             <div key={i} className={
-              line.includes('━━') ? 'text-primary font-medium mt-2' :
+              line.includes('━━') ? 'text-accent font-medium mt-2' :
               line.includes('✓') ? 'text-emerald-400' :
               line.includes('✗') ? 'text-red-400' :
               ''

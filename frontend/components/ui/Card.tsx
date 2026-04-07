@@ -3,21 +3,18 @@ import clsx from 'clsx';
 interface CardProps {
   children: React.ReactNode;
   className?: string;
-  hover?: boolean;
+  glow?: 'blue' | 'cyan' | 'green' | 'none';
 }
 
-export function Card({ children, className, hover = false }: CardProps) {
+export function Card({ children, className, glow = 'blue' }: CardProps) {
   return (
     <div
       className={clsx(
-        'bg-white rounded-2xl',
-        'border border-outline',
-        'p-5',
-        'shadow-card',
-        hover && [
-          'transition-all duration-200',
-          'hover:shadow-card-hover hover:-translate-y-0.5',
-        ],
+        'glass-card rounded-2xl p-6',
+        'transition-all duration-300',
+        'hover:border-white/[0.08]',
+        glow === 'blue' && 'glow-card',
+        glow === 'cyan' && 'shadow-glow-cyan',
         className,
       )}
     >

@@ -9,9 +9,9 @@ INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR.parent / "output"
 
 # ── Health Checker ───────────────────────────────────────
-HTTP_TIMEOUT = 15  # secondes
+HTTP_TIMEOUT = 8  # secondes
 HTTP_MAX_CONCURRENT = 50  # requêtes parallèles (ajuster selon ta bande passante)
-HTTP_RETRIES = 2
+HTTP_RETRIES = 1
 HTTP_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "

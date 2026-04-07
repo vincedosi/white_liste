@@ -17,60 +17,71 @@ from config import HTTP_TIMEOUT, HTTP_MAX_CONCURRENT, HTTP_RETRIES, HTTP_USER_AG
 from models import HealthResult, SiteStatus
 
 
+async def _try_url(
+    client: httpx.AsyncClient,
+    url: str,
+    semaphore: asyncio.Semaphore,
+) -> HealthResult | None:
+    """Try a single URL. Returns HealthResult on success, None on failure."""
+    try:
+        async with semaphore:
+            start = time.monotonic()
+            response = await client.get(url, follow_redirects=True)
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+
+        if 200 <= response.status_code < 300:
+            status = SiteStatus.OK
+        elif 300 <= response.status_code < 400:
+            status = SiteStatus.REDIRECT
+        elif 400 <= response.status_code < 500:
+            status = SiteStatus.CLIENT_ERROR
+        else:
+            status = SiteStatus.SERVER_ERROR
+
+        return HealthResult(
+            status=status,
+            http_code=response.status_code,
+            response_time_ms=elapsed_ms,
+            final_url=str(response.url),
+        )
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPError):
+        return None
+
+
 async def check_site(
     client: httpx.AsyncClient,
     domain: str,
     semaphore: asyncio.Semaphore,
 ) -> HealthResult:
-    """Check un seul site avec retry."""
+    """Check un seul site avec fallback www. et http://."""
+    # Try URLs in order: https://domain, https://www.domain, http://domain
+    urls_to_try = [f"https://{domain}"]
+    if not domain.startswith("www."):
+        urls_to_try.append(f"https://www.{domain}")
+    urls_to_try.append(f"http://{domain}")
+
+    last_error = ""
+    for url in urls_to_try:
+        result = await _try_url(client, url, semaphore)
+        if result is not None:
+            return result
+
+    # All failed — do one final attempt with details for error reporting
     url = f"https://{domain}"
-
-    for attempt in range(HTTP_RETRIES + 1):
-        if attempt > 0:
-            print(f"  [health] {domain} retry {attempt}/{HTTP_RETRIES}...", flush=True)
-        try:
-            async with semaphore:
-                start = time.monotonic()
-                response = await client.get(url, follow_redirects=True)
-                elapsed_ms = int((time.monotonic() - start) * 1000)
-
-            if 200 <= response.status_code < 300:
-                status = SiteStatus.OK
-            elif 300 <= response.status_code < 400:
-                status = SiteStatus.REDIRECT
-            elif 400 <= response.status_code < 500:
-                status = SiteStatus.CLIENT_ERROR
-            else:
-                status = SiteStatus.SERVER_ERROR
-
-            return HealthResult(
-                status=status,
-                http_code=response.status_code,
-                response_time_ms=elapsed_ms,
-                final_url=str(response.url),
-            )
-
-        except httpx.TimeoutException:
-            print(f"  [health] {domain} timeout (attempt {attempt+1})", flush=True)
-            if attempt == HTTP_RETRIES:
-                return HealthResult(status=SiteStatus.TIMEOUT, error_message="Timeout after retries")
-        except httpx.ConnectError as e:
-            error_msg = str(e).lower()
-            if "name resolution" in error_msg or "dns" in error_msg or "getaddrinfo" in error_msg:
-                print(f"  [health] {domain} DNS error: {str(e)[:80]}", flush=True)
-                return HealthResult(status=SiteStatus.DNS_ERROR, error_message=str(e))
-            print(f"  [health] {domain} connect error (attempt {attempt+1}): {str(e)[:80]}", flush=True)
-            if attempt == HTTP_RETRIES:
-                return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e))
-        except httpx.HTTPError as e:
-            if "ssl" in str(e).lower() or "certificate" in str(e).lower():
-                print(f"  [health] {domain} SSL error: {str(e)[:80]}", flush=True)
-                return HealthResult(status=SiteStatus.SSL_ERROR, error_message=str(e))
-            print(f"  [health] {domain} HTTP error (attempt {attempt+1}): {str(e)[:80]}", flush=True)
-            if attempt == HTTP_RETRIES:
-                return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e))
-
-        await asyncio.sleep(1 * (attempt + 1))
+    try:
+        async with semaphore:
+            await client.get(url, follow_redirects=True)
+    except httpx.TimeoutException:
+        return HealthResult(status=SiteStatus.TIMEOUT, error_message="Timeout after retries")
+    except httpx.ConnectError as e:
+        error_msg = str(e).lower()
+        if "name resolution" in error_msg or "dns" in error_msg or "getaddrinfo" in error_msg:
+            return HealthResult(status=SiteStatus.DNS_ERROR, error_message=str(e)[:200])
+        return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e)[:200])
+    except httpx.HTTPError as e:
+        if "ssl" in str(e).lower() or "certificate" in str(e).lower():
+            return HealthResult(status=SiteStatus.SSL_ERROR, error_message=str(e)[:200])
+        return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message=str(e)[:200])
 
     return HealthResult(status=SiteStatus.CONNECTION_ERROR, error_message="Failed after retries")
 
@@ -95,6 +106,6 @@ async def check_all(domains: list[str]) -> dict[str, HealthResult]:
             results[domain] = await task
             done += 1
             status_icon = "+" if results[domain].is_alive else "x"
-            print(f"  [{done}/{total}] {status_icon} {domain} -> {results[domain].status.value} ({results[domain].http_code or 'N/A'})")
+            print(f"  [{done}/{total}] {status_icon} {domain} -> {results[domain].status.value} ({results[domain].http_code or 'N/A'})", flush=True)
 
     return results

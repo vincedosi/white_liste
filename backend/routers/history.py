@@ -201,11 +201,45 @@ async def get_audit(audit_id: str, user: dict = Depends(get_current_user)):
 
 @router.delete("/api/audits/{audit_id}")
 async def delete_audit(audit_id: str, user: dict = Depends(get_current_user)):
-    """Delete an audit from DB."""
+    """Delete an audit from DB, JSON file, and associated screenshots."""
     audit = await fetch_one("SELECT * FROM audits WHERE id = ?", (audit_id,))
     if not audit:
         raise HTTPException(status_code=404, detail="Audit not found")
     await check_workspace_role(audit["workspace_id"], user["id"], ["owner", "editor"])
+
+    # Delete screenshots from disk
+    screenshots_dir = HISTORY_DIR.parent / "screenshots"
+    try:
+        import json as json_mod
+        results = json_mod.loads(audit.get("results_json") or "[]")
+        for result in results:
+            domain = result.get("domain", "")
+            ss = result.get("screenshots") or {}
+            # Delete by path
+            for key in ("viewport_path", "fullpage_path"):
+                fpath = ss.get(key, "")
+                if fpath:
+                    fname = fpath.replace("\\", "/").split("/")[-1]
+                    fp = screenshots_dir / fname
+                    if fp.exists():
+                        fp.unlink()
+            # Delete by domain naming convention
+            if domain:
+                safe = domain.replace(".", "_").replace("/", "_")
+                for suffix in ("_viewport.png", "_full.png"):
+                    fp = screenshots_dir / f"{safe}{suffix}"
+                    if fp.exists():
+                        fp.unlink()
+    except Exception:
+        pass  # Best effort
+
+    # Delete JSON file
+    _ensure_history_dir()
+    json_path = HISTORY_DIR / f"{audit_id}.json"
+    if json_path.exists():
+        json_path.unlink()
+
+    # Delete from DB
     await db_execute("DELETE FROM audits WHERE id = ?", (audit_id,))
     return {"status": "deleted", "audit_id": audit_id}
 

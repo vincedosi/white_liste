@@ -2,9 +2,9 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { BarChart3, ArrowRight, Clock, RefreshCw } from 'lucide-react';
+import { BarChart3, ArrowRight, Clock, RefreshCw, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthContext';
-import { getWorkspace, getAudits, getActivity } from '@/lib/api';
+import { getWorkspace, getAudits, getActivity, deleteAudit } from '@/lib/api';
 import type { WorkspaceDetail, AuditSummary, ActivityEntry } from '@/lib/types';
 import clsx from 'clsx';
 
@@ -18,6 +18,39 @@ export default function WorkspaceDashboardPage() {
   const [audits, setAudits] = useState<AuditSummary[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleteLoading(true);
+    try {
+      await deleteAudit(id);
+      setAudits((prev) => prev.filter((a) => a.id !== id));
+      setDeleteTarget(null);
+    } catch { /* keep dialog open */ }
+    finally { setDeleteLoading(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      await Promise.all(Array.from(selected).map((id) => deleteAudit(id)));
+      setAudits((prev) => prev.filter((a) => !selected.has(a.id)));
+      setSelected(new Set());
+    } catch { /* partial failure */ }
+    finally { setBulkDeleting(false); }
+  };
 
   useEffect(() => {
     async function load() {
@@ -124,36 +157,83 @@ export default function WorkspaceDashboardPage() {
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {audits.slice(0, 5).map((audit) => (
+          <>
+          {/* Bulk actions */}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-1">
               <button
-                key={audit.id}
-                onClick={() => router.push(`/workspaces/${wsId}/audit/${audit.id}`)}
-                className="w-full flex items-center justify-between p-4 glass-card rounded-2xl text-left hover:border-white/[0.08] transition-all group"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1.5 h-7 px-3 text-[11px] font-medium uppercase tracking-wide rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.02] flex items-center justify-center border border-white/[0.05]">
-                    <BarChart3 size={16} className="text-accent" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-extralight tracking-wide text-on-surface">{audit.client}</p>
-                    <p className="font-label text-[9px] text-on-surface-variant tracking-wider font-extralight">
-                      {audit.domain_count} sites · {new Date(audit.created_at).toLocaleDateString('fr-FR')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={clsx(
-                    'font-label text-[9px] tracking-[0.15em] font-extralight uppercase',
-                    audit.status === 'completed' ? 'text-secondary' : audit.status === 'failed' ? 'text-danger' : 'text-on-surface-variant',
-                  )}>
-                    {audit.status === 'completed' ? 'SUCCESS' : audit.status === 'failed' ? 'ERREUR' : 'PENDING'}
-                  </span>
-                  <ArrowRight size={12} className="text-on-surface-variant/30 group-hover:text-accent/50 transition-colors" />
-                </div>
+                <Trash2 size={12} />
+                {bulkDeleting ? 'Suppression...' : `Supprimer (${selected.size})`}
               </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-[10px] text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                Deselectionner
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {audits.slice(0, 10).map((audit) => (
+              <div
+                key={audit.id}
+                className={clsx(
+                  'flex items-center gap-3 p-4 glass-card rounded-2xl hover:border-white/[0.08] transition-all group',
+                  selected.has(audit.id) && 'ring-1 ring-accent/30',
+                )}
+              >
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(audit.id)}
+                  onChange={() => toggleSelect(audit.id)}
+                  className="w-3.5 h-3.5 rounded border-white/20 accent-accent cursor-pointer flex-shrink-0"
+                />
+
+                {/* Click to navigate */}
+                <div
+                  className="flex items-center justify-between flex-1 cursor-pointer"
+                  onClick={() => router.push(`/workspaces/${wsId}/audit/${audit.id}`)}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-white/[0.02] flex items-center justify-center border border-white/[0.05]">
+                      <BarChart3 size={16} className="text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-extralight tracking-wide text-on-surface">{audit.client}</p>
+                      <p className="font-label text-[9px] text-on-surface-variant tracking-wider font-extralight">
+                        {audit.domain_count} sites · {new Date(audit.created_at).toLocaleDateString('fr-FR')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={clsx(
+                      'font-label text-[9px] tracking-[0.15em] font-extralight uppercase',
+                      audit.status === 'completed' ? 'text-secondary' : audit.status === 'failed' ? 'text-danger' : 'text-on-surface-variant',
+                    )}>
+                      {audit.status === 'completed' ? 'SUCCESS' : audit.status === 'failed' ? 'ERREUR' : 'PENDING'}
+                    </span>
+                    <ArrowRight size={12} className="text-on-surface-variant/30 group-hover:text-accent/50 transition-colors" />
+                  </div>
+                </div>
+
+                {/* Delete button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(audit.id); }}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-on-surface-variant/30 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
+                  title="Supprimer"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))}
           </div>
+          </>
         )}
       </div>
 
@@ -174,6 +254,40 @@ export default function WorkspaceDashboardPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {/* Delete confirmation dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="glass-card rounded-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle size={18} className="text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-on-surface">Supprimer cet audit ?</h3>
+                <p className="text-[10px] text-on-surface-variant mt-0.5">
+                  Le rapport, les screenshots et les donnees seront supprimes definitivement.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteLoading}
+                className="flex-1 h-9 rounded-xl text-xs font-medium bg-white/[0.03] text-on-surface-variant border border-white/[0.06] hover:bg-white/[0.06] transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleDelete(deleteTarget)}
+                disabled={deleteLoading}
+                className="flex-1 h-9 rounded-xl text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all disabled:opacity-40"
+              >
+                {deleteLoading ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
           </div>
         </div>
       )}

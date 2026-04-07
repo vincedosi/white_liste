@@ -42,6 +42,19 @@ def _read_stderr(stream):
     stream.close()
 
 
+# stdout buffer — must read in background to avoid deadlock on large JSON
+_stdout_chunks: list[str] = []
+_stdout_lock = threading.Lock()
+
+
+def _read_stdout(stream):
+    """Background thread: read stdout to avoid pipe deadlock."""
+    data = stream.read()
+    with _stdout_lock:
+        _stdout_chunks.append(data)
+    stream.close()
+
+
 def run_playwright_worker(
     domains: list[str],
     mode: str = "attention",
@@ -54,19 +67,27 @@ def run_playwright_worker(
         "output_dir": output_dir,
     })
 
-    timeout_s = len(domains) * 45 + 120
+    timeout_s = len(domains) * 30 + 120
 
     proc = subprocess.Popen(
-        [sys.executable, str(WORKER_PATH)],
+        [sys.executable, "-u", str(WORKER_PATH)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
-    # Start background stderr reader
+    # Read stderr (logs) and stdout (JSON result) in background threads
+    # to avoid pipe buffer deadlock
     stderr_thread = threading.Thread(target=_read_stderr, args=(proc.stderr,), daemon=True)
     stderr_thread.start()
+
+    with _stdout_lock:
+        _stdout_chunks.clear()
+    stdout_thread = threading.Thread(target=_read_stdout, args=(proc.stdout,), daemon=True)
+    stdout_thread.start()
 
     # Send request to stdin
     proc.stdin.write(request)
@@ -80,11 +101,12 @@ def run_playwright_worker(
         proc.wait()
         raise RuntimeError(f"Playwright worker timeout after {timeout_s}s")
 
-    # Wait for stderr thread to finish reading
+    # Wait for reader threads
     stderr_thread.join(timeout=5)
+    stdout_thread.join(timeout=5)
 
-    stdout = proc.stdout.read()
-    proc.stdout.close()
+    with _stdout_lock:
+        stdout = "".join(_stdout_chunks)
 
     if proc.returncode != 0:
         remaining = get_and_clear_logs()
@@ -128,6 +150,60 @@ def score_all_subprocess(
         load_times[domain] = data.get("page_load_time_ms", 0)
 
     return results, content_langs, adtech_results, tracker_results, load_times
+
+
+def full_audit_subprocess(
+    domains: list[str],
+    output_dir: str = "./output/screenshots",
+) -> tuple[dict[str, AttentionResult], dict[str, str], dict[str, dict], dict[str, dict], dict[str, int], dict[str, dict]]:
+    """
+    Single-pass: scoring + screenshots in one Playwright run.
+    Replaces the old two-pass approach (score_all + screenshot_all).
+
+    Returns:
+        (attention_results, content_langs, adtech_results, tracker_results, load_times, screenshot_results)
+    """
+    raw_results = run_playwright_worker(domains, mode="full", output_dir=output_dir)
+
+    attention_results = {}
+    content_langs = {}
+    adtech_results = {}
+    tracker_results = {}
+    load_times = {}
+    screenshot_results = {}
+
+    for domain, data in raw_results.items():
+        attention_results[domain] = AttentionResult(
+            ad_count=data.get("ad_count", 0),
+            score=data.get("score", 5.0),
+            is_mfa=data.get("is_mfa", False),
+            details=data.get("details", {}),
+            error=data.get("error"),
+        )
+        lang = data.get("content_lang", "")
+        if lang:
+            content_langs[domain] = lang
+
+        adtech_results[domain] = data.get("adtech", {"scripts_detected": []})
+        tracker_results[domain] = data.get("trackers", {"total": 0})
+        load_times[domain] = data.get("page_load_time_ms", 0)
+
+        screenshot_results[domain] = {
+            "viewport_path": data.get("viewport_path", ""),
+            "fullpage_path": data.get("fullpage_path", ""),
+            "ad_count": data.get("ad_count", 0),
+            "score": data.get("score", 5.0),
+            "clutter_score": data.get("clutter_score", 5.0),
+            "clutter_detail": data.get("clutter_detail", {}),
+            "page_profile": data.get("page_profile", {}),
+            "breakdown": data.get("details", {}),
+            "cookie_dismissed": data.get("cookie_dismissed", False),
+            "adtech": data.get("adtech", {"scripts_detected": []}),
+            "trackers": data.get("trackers", {"total": 0}),
+            "error": data.get("error"),
+        }
+
+    return attention_results, content_langs, adtech_results, tracker_results, load_times, screenshot_results
 
 
 def extract_metadata_subprocess(domains: list[str]) -> dict[str, dict]:

@@ -136,6 +136,28 @@ def geolocate_ip(ip: str) -> dict:
     return {}
 
 
+def geolocate_batch(ips: list[str]) -> dict[str, dict]:
+    """Batch geolocation via ip-api.com (up to 100 IPs in one call)."""
+    if not ips:
+        return {}
+    payload = [{"query": ip, "fields": "status,query,country,countryCode,city,isp"} for ip in ips if ip]
+    if not payload:
+        return {}
+    try:
+        resp = httpx.post(
+            "http://ip-api.com/batch",
+            json=payload,
+            timeout=10,
+        )
+        results = {}
+        for item in resp.json():
+            if item.get("status") == "success":
+                results[item["query"]] = item
+        return results
+    except Exception:
+        return {}
+
+
 def parse_content_lang(lang_raw: str) -> tuple[str, str]:
     """Parse un code langue brut ('fr-FR', 'en', 'fr_FR') en (code, nom)."""
     if not lang_raw:
@@ -156,49 +178,46 @@ def localize_all(
     results = {}
     total = len(domains)
 
+    # Phase 1: TLD + DNS resolution (fast, parallel-safe)
+    domain_ips: dict[str, str] = {}
     for i, domain in enumerate(domains):
-        print(f"  [geo] [{i+1}/{total}] {domain}...", flush=True)
-        result = LocalizationResult()
-
         tld, tld_country = extract_tld(domain)
+        result = LocalizationResult()
         result.tld = tld
         result.tld_country = tld_country
-        print(f"    [tld] .{tld} -> {tld_country or '?'}", flush=True)
 
-        print(f"    [dns] Resolution IP...", flush=True)
         ip = resolve_ip(domain)
         result.ip_address = ip
-        if ip:
-            print(f"    [dns] {domain} -> {ip}", flush=True)
-        else:
-            print(f"    [dns] {domain} -> ECHEC resolution", flush=True)
-
-        if ip:
-            print(f"    [geoip] Geolocalisation {ip}...", flush=True)
-            geo = geolocate_ip(ip)
-            if geo:
-                result.server_country = geo.get("country", "")
-                result.server_country_code = geo.get("countryCode", "")
-                result.server_city = geo.get("city", "")
-                result.server_isp = geo.get("isp", "")
-                print(f"    [geoip] {result.server_country} / {result.server_city} / ISP: {result.server_isp}", flush=True)
-            else:
-                print(f"    [geoip] Pas de resultat pour {ip}", flush=True)
+        domain_ips[domain] = ip
 
         if content_langs and domain in content_langs:
             lang_raw = content_langs[domain]
             code, name = parse_content_lang(lang_raw)
             result.content_lang_code = code
             result.content_lang = name
-            print(f"    [lang] {code} ({name})", flush=True)
 
         results[domain] = result
+        icon = "+" if ip else "x"
+        print(f"  [geo] [{i+1}/{total}] {icon} {domain} -> .{tld} IP={ip or 'NONE'}", flush=True)
+
+    # Phase 2: Batch geolocation (1 API call instead of N × 1.5s)
+    unique_ips = list(set(ip for ip in domain_ips.values() if ip))
+    if unique_ips:
+        print(f"  [geoip] Batch geolocation pour {len(unique_ips)} IPs uniques...", flush=True)
+        geo_map = geolocate_batch(unique_ips)
+        print(f"  [geoip] {len(geo_map)} resultats recus", flush=True)
+
+        for domain, ip in domain_ips.items():
+            if ip and ip in geo_map:
+                geo = geo_map[ip]
+                results[domain].server_country = geo.get("country", "")
+                results[domain].server_country_code = geo.get("countryCode", "")
+                results[domain].server_city = geo.get("city", "")
+                results[domain].server_isp = geo.get("isp", "")
+                print(f"    {domain} -> {geo.get('country', '?')} / {geo.get('city', '?')}", flush=True)
 
         if progress_callback:
-            progress_callback(i + 1, total, domain, result)
-
-        if ip and i < total - 1:
-            print(f"    [wait] 1.5s rate-limit ip-api.com...", flush=True)
-            time.sleep(1.5)
+            for i, domain in enumerate(domains):
+                progress_callback(i + 1, total, domain, results[domain])
 
     return results

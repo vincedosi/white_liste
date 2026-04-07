@@ -14,9 +14,9 @@ interface SiteModalProps {
 
 function MetricBox({ label, value, color }: { label: string; value: string | number; color?: string }) {
   return (
-    <div className="flex flex-col items-center gap-1 bg-surface-mid rounded-lg px-3 py-2.5 border border-outline/10">
+    <div className="flex flex-col items-center gap-1 bg-surface-container rounded-lg px-3 py-2.5 border border-white/[0.05]">
       <span className="font-mono text-[9px] uppercase tracking-[2px] text-dim">{label}</span>
-      <span className="font-sans font-bold text-lg" style={{ color: color || '#0F172A' }}>
+      <span className="font-sans font-bold text-lg" style={{ color: color || '#ffffff' }}>
         {value}
       </span>
     </div>
@@ -107,7 +107,7 @@ function ClutterAnalysis({ site }: { site: SiteAudit }) {
       <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-3">
         Analyse de l&apos;encombrement
       </h3>
-      <div className="bg-surface-mid/50 rounded-lg p-4 border border-outline/10 space-y-3">
+      <div className="bg-surface-container/50 rounded-lg p-4 border border-white/[0.05] space-y-3">
         {/* Bars */}
         <div className="space-y-2">
           <ClutterBar label="ATF" adPct={atfAdPct} contentPct={atfContentPct} />
@@ -196,22 +196,22 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
   const responseTime = site.health.response_time_ms;
   const statusConf = STATUS_CONFIG[site.health.status] || STATUS_CONFIG.error;
 
-  const scoreColor = score !== null ? (score >= 7 ? '#22C55E' : score >= 4 ? '#F97316' : '#EF4444') : '#64748b';
+  const scoreColor = score !== null ? (score >= 7 ? '#00fc40' : score >= 4 ? '#F59E0B' : '#ff716c') : '#606060';
 
   const statusBadge: 'ok' | 'dead' | 'mfa' | 'flag' =
     site.health.status === 'ok' ? 'ok' : site.health.status === 'dead' ? 'dead' : 'flag';
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-outline shadow-xl mx-4 animate-in slide-in-from-bottom-4 fade-in duration-300"
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto glass-card rounded-2xl shadow-glow-blue mx-4 animate-in slide-in-from-bottom-4 fade-in duration-300"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white/95 backdrop-blur-sm border-b border-outline">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-surface-container/90 backdrop-blur-sm border-b border-white/[0.05]">
           <div className="flex items-center gap-3">
             <h2 className="font-mono text-lg font-bold text-on-surface">{site.domain}</h2>
             <Badge variant={statusBadge}>{statusConf.label}</Badge>
@@ -241,7 +241,7 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
             <MetricBox
               label="Cookie"
               value={site.ads_txt?.present ? 'ads.txt' : 'N/A'}
-              color={site.ads_txt?.present ? '#22C55E' : '#94A3B8'}
+              color={site.ads_txt?.present ? '#00fc40' : '#606060'}
             />
           </div>
 
@@ -273,7 +273,7 @@ export function SiteModal({ site, onClose }: SiteModalProps) {
               <h3 className="font-mono text-[10px] uppercase tracking-[2px] text-dim mb-3">
                 Repartition par zone
               </h3>
-              <div className="grid grid-cols-5 gap-2 bg-surface-mid/50 rounded-lg p-3 border border-outline/10">
+              <div className="grid grid-cols-5 gap-2 bg-surface-container/50 rounded-lg p-3 border border-white/[0.05]">
                 <ZoneCol label="ATF" value={site.attention.breakdown.ads_above_fold} color="#EF4444" />
                 <ZoneCol label="Mid" value={site.attention.breakdown.ads_mid_page} color="#F97316" />
                 <ZoneCol label="Deep" value={site.attention.breakdown.ads_deep} color="#EAB308" />

@@ -1,6 +1,5 @@
 'use client';
 
-import clsx from 'clsx';
 import { Card } from '@/components/ui/Card';
 
 interface KpiCardProps {
@@ -13,39 +12,27 @@ interface KpiCardProps {
 
 export function KpiCard({ label, value, color, delta, subtitle }: KpiCardProps) {
   return (
-    <Card hover className="relative overflow-hidden group">
-      {/* Subtle top accent line */}
-      {color && (
-        <div
-          className="absolute top-0 left-0 right-0 h-[2px] opacity-60 group-hover:opacity-100 transition-opacity"
-          style={{ backgroundColor: color }}
-        />
-      )}
-
-      <p className="font-sans text-[11px] font-medium uppercase tracking-[1.5px] text-dim mb-2 select-none">
+    <Card>
+      <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
         {label}
-      </p>
-
-      <p
-        className="font-sans font-extrabold text-[36px] leading-none tracking-tight"
-        style={{ color: color || '#0F172A' }}
-      >
-        {value}
-      </p>
-
-      {delta && (
-        <p
-          className={clsx(
-            'font-mono text-xs mt-2',
-            delta.positive ? 'text-success' : 'text-danger',
-          )}
+      </span>
+      <div className="flex items-baseline gap-2 mt-2">
+        <span
+          className="text-4xl font-extralight tracking-tighter text-on-surface glow-blue"
+          style={color ? { color } : undefined}
         >
-          {delta.positive ? '+' : ''}{delta.value}
-        </p>
-      )}
-
+          {value}
+        </span>
+        {delta && (
+          <span className={`font-label text-[10px] font-extralight tracking-widest ${delta.positive ? 'text-secondary' : 'text-danger'}`}>
+            {delta.positive ? '+' : ''}{delta.value}
+          </span>
+        )}
+      </div>
       {subtitle && (
-        <p className="font-mono text-[11px] text-dim mt-1.5">{subtitle}</p>
+        <p className="font-label text-[9px] text-on-surface-variant/50 font-extralight mt-1 tracking-wider">
+          {subtitle}
+        </p>
       )}
     </Card>
   );

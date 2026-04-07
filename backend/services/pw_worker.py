@@ -329,6 +329,101 @@ TRACKER_NETWORK_DOMAINS = [
 AD_VISUAL_TYPES = {"image", "media", "iframe", "subdocument", "object"}
 
 
+def detect_interstitials(page) -> list[dict]:
+    """Detect interstitial ads BEFORE removing overlays.
+    Interstitials are full-screen fixed overlays that contain ad content
+    (iframes, ad network scripts, large images, or ad-related classes).
+    Returns list of detected interstitial info dicts.
+    """
+    js = """
+    () => {
+        const interstitials = [];
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        const adKeywords = [
+            'ad', 'pub', 'sponsor', 'promo', 'interstitial', 'modal-ad',
+            'overlay-ad', 'splash', 'takeover', 'preroll', 'welcome-ad',
+            'page-skin', 'skin-ad', 'fullscreen-ad',
+        ];
+        const adNetworks = [
+            'doubleclick', 'googlesyndication', 'googleadservices',
+            'taboola', 'outbrain', 'criteo', 'teads', 'amazon-adsystem',
+            'pubmatic', 'adnxs', 'rubiconproject', 'smartadserver',
+        ];
+
+        function hasAdContent(el) {
+            // Check class/id for ad keywords
+            const classId = ((el.className || '') + ' ' + (el.id || '')).toLowerCase();
+            if (adKeywords.some(k => classId.includes(k))) return true;
+
+            // Check for ad iframes inside
+            const iframes = el.querySelectorAll('iframe');
+            for (const iframe of iframes) {
+                const src = (iframe.src || '').toLowerCase();
+                if (adNetworks.some(n => src.includes(n))) return true;
+                // Large iframe inside overlay = likely ad
+                if (iframe.offsetWidth > vw * 0.3 && iframe.offsetHeight > vh * 0.3) return true;
+            }
+
+            // Check for ad images (large external images)
+            const imgs = el.querySelectorAll('img[src]');
+            for (const img of imgs) {
+                if (img.offsetWidth > vw * 0.4 && img.offsetHeight > vh * 0.3) return true;
+            }
+
+            // Check for GPT slots inside
+            if (el.querySelector('div[id^="div-gpt-ad"], div[id^="google_ads_iframe"], ins.adsbygoogle')) return true;
+
+            // Check data attributes
+            const html = el.outerHTML.slice(0, 500).toLowerCase();
+            if (adNetworks.some(n => html.includes(n))) return true;
+
+            return false;
+        }
+
+        document.querySelectorAll('*').forEach(el => {
+            const s = window.getComputedStyle(el);
+            if (s.position !== 'fixed') return;
+
+            const z = parseInt(s.zIndex) || 0;
+            if (z < 100) return;
+
+            const w = el.offsetWidth;
+            const h = el.offsetHeight;
+
+            // Must cover significant portion of viewport
+            const isFullscreen = w >= vw * 0.7 && h >= vh * 0.5;
+            const isLargeOverlay = w >= vw * 0.5 && h >= vh * 0.4 && z > 500;
+
+            if (!isFullscreen && !isLargeOverlay) return;
+
+            // Check if it contains ad content (not just a cookie banner)
+            if (!hasAdContent(el)) return;
+
+            interstitials.push({
+                tag: el.tagName.toLowerCase(),
+                id: el.id || '',
+                class: (el.className || '').toString().slice(0, 100),
+                width: w,
+                height: h,
+                zIndex: z,
+                area: w * h,
+                viewport_coverage: Math.round((w * h) / (vw * vh) * 100),
+                has_iframe: el.querySelectorAll('iframe').length > 0,
+                has_gpt: !!el.querySelector('div[id^="div-gpt-ad"], ins.adsbygoogle'),
+            });
+        });
+
+        return interstitials;
+    }
+    """
+    try:
+        return page.evaluate(js)
+    except Exception:
+        return []
+
+
 def force_remove_overlays(page) -> int:
     """Supprime TOUS les overlays/bandeaux/modals sans connaitre le CMP.
     Approche universelle : detecte par position, z-index et taille.
@@ -403,22 +498,22 @@ def dismiss_cookie_banner(page) -> bool:
 
 
 def scroll_full_page(page):
-    """Scroll complet bas puis haut pour declencher le lazy-loading."""
+    """Fast scroll: big steps, short pauses. Triggers lazy-loading."""
     page.evaluate("""
         () => {
             return new Promise((resolve) => {
                 const totalHeight = document.body.scrollHeight;
-                let currentPosition = 0;
-                const step = 400;
+                let pos = 0;
+                const step = 1200;
                 const interval = setInterval(() => {
-                    currentPosition += step;
-                    window.scrollTo(0, currentPosition);
-                    if (currentPosition >= totalHeight) {
+                    pos += step;
+                    window.scrollTo(0, pos);
+                    if (pos >= totalHeight) {
                         clearInterval(interval);
                         window.scrollTo(0, 0);
                         resolve();
                     }
-                }, 100);
+                }, 60);
             });
         }
     """)
@@ -585,6 +680,8 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                 }}
                 .mli-ad-sticky {{ outline-color: #7C3AED !important; outline-width: 4px !important; }}
                 .mli-ad-sticky .mli-ad-label {{ background: #7C3AED !important; }}
+                .mli-ad-interstitial {{ outline-color: #F97316 !important; outline-width: 5px !important; }}
+                .mli-ad-interstitial .mli-ad-label {{ background: #F97316 !important; font-size: 11px !important; padding: 2px 8px !important; }}
             `;
             document.head.appendChild(style);
         }}
@@ -625,13 +722,15 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
             // Highlight inline — no second pass needed
             if (doHighlight) {{
                 let zone = 'FOOTER';
-                if (isSticky) zone = 'STICKY';
+                if (method === 'interstitial') zone = 'INTERSTIT.';
+                else if (isSticky) zone = 'STICKY';
                 else if (absY < 800) zone = 'ATF';
                 else if (absY < 2000) zone = 'MID';
                 else if (absY < 4000) zone = 'DEEP';
 
                 el.classList.add('mli-ad-highlight');
-                if (isSticky) el.classList.add('mli-ad-sticky');
+                if (method === 'interstitial') el.classList.add('mli-ad-interstitial');
+                else if (isSticky) el.classList.add('mli-ad-sticky');
 
                 const label = document.createElement('span');
                 label.className = 'mli-ad-label';
@@ -871,7 +970,7 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
 
     Returns: (score, breakdown, detection_method)
     """
-    breakdown = {"above_fold": 0, "mid_page": 0, "deep": 0, "footer": 0, "sticky": 0}
+    breakdown = {"above_fold": 0, "mid_page": 0, "deep": 0, "footer": 0, "sticky": 0, "interstitial": 0}
 
     dom_ad_count = len(ads)
     net_visual_count = net_stats.get("ad_visual_requests", 0)
@@ -882,10 +981,19 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
     # DOM penalty (from positioned elements)
     dom_penalty = 0.0
     has_sticky = False
+    has_interstitial = False
     for ad in ads:
         y = ad.get("y", 0)
         area = ad.get("area", 0)
         is_sticky = ad.get("is_sticky", False)
+        method = ad.get("method", "")
+
+        # Interstitials get heavy penalty (2.0 per interstitial)
+        if method == "interstitial":
+            dom_penalty += 2.0
+            breakdown["interstitial"] += 1
+            has_interstitial = True
+            continue
 
         zone_weight = get_zone_weight(y)
         size_mult = get_size_multiplier(area)
@@ -1064,7 +1172,7 @@ def compute_clutter_score(page) -> tuple[float, dict, dict]:
             page.evaluate("window.scrollTo(0, 0)")
         else:
             page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {scroll_pct})")
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(400)
         result = page.evaluate(CLUTTER_MEASURE_JS)
         captures[name] = result
 
@@ -1108,71 +1216,74 @@ def compute_clutter_score(page) -> tuple[float, dict, dict]:
 
 
 def _log(msg: str):
-    """Log to stderr (captured by pw_bridge for live streaming)."""
-    print(msg, file=sys.stderr, flush=True)
+    """Log to stderr with timestamp (captured by pw_bridge for live streaming)."""
+    from datetime import datetime
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
 
 
 def score_attention(page, domain: str) -> dict:
     """Charge une page avec interception reseau + detection DOM multi-couche.
     Consent cookies are pre-injected on the context before this call.
+    Uses adaptive waits.
     """
     url = f"https://{domain}"
     intercepted = []
     try:
-        # 0. Install PASSIVE network listener BEFORE navigation
         intercepted = setup_network_listener(page)
         _log(f"    [net] Listener installe pour {domain}")
 
-        # 1. Navigate
-        _log(f"    [nav] goto {url} (timeout=25s, wait_until=load)...")
+        _log(f"    [nav] goto {url}...")
         t_start = _time.monotonic()
         try:
-            page.goto(url, timeout=25_000, wait_until="load")
+            page.goto(url, timeout=20_000, wait_until="load")
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
             _log(f"    [nav] Page chargee en {page_load_time_ms}ms")
         except Exception as nav_err:
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
-            _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms: {str(nav_err)[:100]} — on continue")
+            _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms — on continue")
 
-        # 2. Wait for CMP to appear
-        _log(f"    [cmp] Attente 2s pour CMP...")
-        page.wait_for_timeout(2000)
-
-        # 3. FIRST try clicking consent
+        _log(f"    [cmp] Detection CMP...")
+        page.wait_for_timeout(800)
         cookie_dismissed = dismiss_cookie_banner(page)
-        _log(f"    [cmp] Cookie banner: {'CLIQUE' if cookie_dismissed else 'pas trouve'}")
+        _log(f"    [cmp] Cookie: {'CLIQUE' if cookie_dismissed else 'absent'}")
 
-        # 4. Force-remove overlays
+        # Detect interstitials BEFORE removing overlays
+        interstitials = detect_interstitials(page)
+        if interstitials:
+            _log(f"    [interstitial] {len(interstitials)} interstitiel(s) detecte(s)!")
+
         n_removed = force_remove_overlays(page)
-        _log(f"    [cmp] Overlays supprimes: {n_removed}")
+        if n_removed:
+            _log(f"    [cmp] {n_removed} overlays supprimes")
 
-        # 5. Wait 4s — ads load after consent
-        _log(f"    [ads] Attente 4s post-consent (chargement pubs)...")
-        page.wait_for_timeout(4000)
+        _log(f"    [ads] Attente adaptative (max 3s)...")
+        ad_wait = _wait_for_ads(page, max_ms=3000)
+        _log(f"    [ads] Ads apres {ad_wait}ms")
 
-        # 6. Scroll full page
-        _log(f"    [scroll] Scroll complet pour lazy-loading...")
+        _log(f"    [scroll] Scroll complet...")
         scroll_full_page(page)
-
-        # 7. Wait for lazy ads
-        _log(f"    [scroll] Attente 2s lazy ads...")
-        page.wait_for_timeout(2000)
-
-        # 8. Scroll back to top
+        page.wait_for_timeout(1000)
         page.evaluate("window.scrollTo(0, 0)")
 
-        # 9. Wait 5s — Prebid/GPT auctions
-        _log(f"    [ads] Attente 5s Prebid/GPT auctions...")
-        page.wait_for_timeout(5000)
+        _log(f"    [ads] Attente auctions (max 3s)...")
+        _wait_for_ads(page, max_ms=3000)
 
-        # 10. Extract language
         content_lang = extract_lang(page)
         _log(f"    [lang] Langue detectee: '{content_lang}'")
 
         # 11. DOM analysis
         _log(f"    [dom] Detection pubs multi-couche...")
         ads = analyze_ads_multi_layer(page)
-        _log(f"    [dom] {len(ads)} elements pub trouves")
+        for it in interstitials:
+            ads.append({
+                "x": 0, "y": 0,
+                "width": it.get("width", 0), "height": it.get("height", 0),
+                "area": it.get("area", 0),
+                "is_sticky": True, "tag": it.get("tag", "div"),
+                "method": "interstitial",
+            })
+        _log(f"    [dom] {len(ads)} elements pub trouves ({len(interstitials)} interstitiel(s))")
 
         # 12. Ad-tech scripts
         adtech = detect_adtech_scripts(page)
@@ -1262,6 +1373,239 @@ def score_attention(page, domain: str) -> dict:
         }
 
 
+def _wait_for_ads(page, max_ms: int = 4000, check_interval: int = 500) -> int:
+    """Wait until ad iframes appear or max_ms elapsed. Returns actual wait ms."""
+    t0 = _time.monotonic()
+    waited = 0
+    while waited < max_ms:
+        page.wait_for_timeout(check_interval)
+        waited = int((_time.monotonic() - t0) * 1000)
+        # Check if ad iframes or GPT slots have rendered
+        ad_count = page.evaluate("""
+            () => document.querySelectorAll(
+                'iframe[src*="doubleclick"], iframe[src*="googlesyndication"], '
+                + 'iframe[src*="safeframe"], div[id^="google_ads_iframe"], '
+                + 'div[id^="div-gpt-ad"], ins.adsbygoogle[data-ad-status]'
+            ).length
+        """)
+        if ad_count > 0:
+            break
+    return waited
+
+
+def full_audit(page, domain: str, output_dir: str) -> dict:
+    """Single-pass: scoring + ad highlighting + screenshots + metadata.
+    Replaces the old two-pass approach (score_attention + screenshot_with_ads).
+    Uses adaptive waits instead of fixed delays.
+    """
+    url = f"https://{domain}"
+    intercepted = []
+    try:
+        # 0. Network listener
+        intercepted = setup_network_listener(page)
+        _log(f"    [net] Listener installe pour {domain}")
+
+        # 1. Navigate
+        _log(f"    [nav] goto {url}...")
+        t_start = _time.monotonic()
+        try:
+            page.goto(url, timeout=20_000, wait_until="load")
+            page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Page chargee en {page_load_time_ms}ms")
+        except Exception as nav_err:
+            page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
+            _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms — on continue")
+
+        # 2. CMP — quick check, no fixed 2s wait
+        _log(f"    [cmp] Detection CMP...")
+        page.wait_for_timeout(800)
+        cookie_dismissed = dismiss_cookie_banner(page)
+        _log(f"    [cmp] Cookie: {'CLIQUE' if cookie_dismissed else 'absent'}")
+
+        # 2b. Detect interstitials BEFORE removing overlays
+        _log(f"    [interstitial] Detection pubs interstitielles...")
+        interstitials = detect_interstitials(page)
+        if interstitials:
+            _log(f"    [interstitial] {len(interstitials)} interstitiel(s) detecte(s)!")
+            for it in interstitials:
+                _log(f"      -> {it.get('tag')}#{it.get('id','')} z={it.get('zIndex')} {it.get('viewport_coverage')}% viewport")
+        else:
+            _log(f"    [interstitial] Aucun detecte")
+
+        n_removed = force_remove_overlays(page)
+        if n_removed:
+            _log(f"    [cmp] {n_removed} overlays supprimes")
+
+        # 3. Wait for ads — adaptive: stop early if ad iframes appear
+        _log(f"    [ads] Attente adaptative post-consent (max 3s)...")
+        ad_wait = _wait_for_ads(page, max_ms=3000, check_interval=500)
+        _log(f"    [ads] Ads detectes apres {ad_wait}ms")
+
+        # 4. Scroll
+        _log(f"    [scroll] Scroll complet...")
+        scroll_full_page(page)
+        page.wait_for_timeout(1000)
+        page.evaluate("window.scrollTo(0, 0)")
+
+        # 5. Prebid/GPT — adaptive wait
+        _log(f"    [ads] Attente auctions (max 3s)...")
+        auction_wait = _wait_for_ads(page, max_ms=3000, check_interval=500)
+        _log(f"    [ads] Auctions apres {auction_wait}ms")
+
+        # 6. Language
+        content_lang = extract_lang(page)
+        _log(f"    [lang] Langue detectee: '{content_lang}'")
+
+        # 7. DOM detection WITH highlighting (single pass)
+        _log(f"    [dom] Detection pubs + highlighting...")
+        ads = analyze_ads_multi_layer(page, highlight=True)
+        # Add interstitials as ads with 'interstitial' method
+        for it in interstitials:
+            ads.append({
+                "x": 0, "y": 0,
+                "width": it.get("width", 0), "height": it.get("height", 0),
+                "area": it.get("area", 0),
+                "is_sticky": True,
+                "tag": it.get("tag", "div"),
+                "method": "interstitial",
+            })
+        _log(f"    [dom] {len(ads)} pubs detectees ({len(interstitials)} interstitiel(s))")
+
+        # 8. Ad-tech scripts
+        adtech = detect_adtech_scripts(page)
+        scripts = adtech.get("scripts_detected", [])
+        _log(f"    [adtech] Scripts: {', '.join(scripts) if scripts else 'aucun'}")
+
+        # 9. Trackers
+        trackers = detect_trackers(page)
+        _log(f"    [track] Trackers: {trackers.get('total', 0)} detectes")
+
+        # 10. Network stats
+        net_stats = compute_network_stats(intercepted)
+        _log(f"    [net] {net_stats.get('ad_requests', 0)} ad reqs, {net_stats.get('ad_visual_requests', 0)} visual")
+
+        # 11. Score v4
+        _log(f"    [score] Calcul score v4...")
+        score, breakdown, detection_method = compute_score_v4(ads, adtech, net_stats)
+        _log(f"    [score] v4={score} method={detection_method} breakdown={breakdown}")
+
+        # 12. Clutter score
+        _log(f"    [clutter] Mesure encombrement 3 positions...")
+        try:
+            clutter_score, clutter_detail, page_profile = compute_clutter_score(page)
+            _log(f"    [clutter] score={clutter_score}")
+        except Exception as e:
+            _log(f"    [clutter] ERREUR: {e} — fallback v4")
+            clutter_score = score
+            clutter_detail = {}
+            page_profile = {}
+
+        # ad_count
+        net_ad_domain_count = len(net_stats.get("ad_domains", []))
+        net_estimated = max(net_ad_domain_count // 2, 1) if net_ad_domain_count > 0 else 0
+        effective_ad_count = len(ads) if len(ads) > 0 else net_estimated
+
+        # 13. MLI banner + screenshots
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(500)
+
+        atf_pct = round(clutter_detail.get("atf", {}).get("ad_ratio", 0) * 100)
+        banner_js = """
+        (info) => {
+            const banner = document.createElement('div');
+            banner.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; z-index: 9999999;
+                background: linear-gradient(135deg, #060B14, #0D1B2A);
+                color: #F1F5F9; padding: 10px 20px;
+                font-family: Inter, Arial, sans-serif; font-size: 12px;
+                display: flex; justify-content: space-between; align-items: center;
+                border-bottom: 1px solid rgba(16,185,129,0.3);
+            `;
+            banner.innerHTML = `
+                <span style="font-weight:700;font-size:14px;">MLI <span style="color:#10B981">Intelligence</span></span>
+                <span>
+                    ${info.domain} —
+                    Encombrement: <b style="color:${info.score >= 7 ? '#10B981' : info.score >= 4 ? '#F97316' : '#EF4444'}">${info.score}/10</b> —
+                    ATF ${info.atf_pct}% pub · ${info.total} element(s)
+                </span>
+            `;
+            document.body.prepend(banner);
+            document.body.style.paddingTop = '44px';
+        }
+        """
+        page.evaluate(banner_js, {
+            "domain": domain, "score": clutter_score,
+            "total": effective_ad_count, "atf_pct": atf_pct,
+            "interstitials": len(interstitials),
+        })
+
+        os.makedirs(output_dir, exist_ok=True)
+        safe_name = domain.replace(".", "_").replace("/", "_")
+
+        _log(f"    [screenshot] Capture viewport...")
+        viewport_path = os.path.join(output_dir, f"{safe_name}_viewport.png")
+        page.screenshot(path=viewport_path, full_page=False)
+
+        _log(f"    [screenshot] Capture fullpage...")
+        fullpage_path = os.path.join(output_dir, f"{safe_name}_full.png")
+        page.screenshot(path=fullpage_path, full_page=True)
+        _log(f"    [screenshot] OK")
+
+        remove_network_listener(page)
+
+        return {
+            # Attention fields
+            "ad_count": effective_ad_count,
+            "interstitials_count": len(interstitials),
+            "interstitials": interstitials,
+            "score": clutter_score,
+            "clutter_score": clutter_score,
+            "attention_score": clutter_score,
+            "is_mfa": clutter_score < 4.0,
+            "clutter_detail": clutter_detail,
+            "page_profile": page_profile,
+            "details": breakdown,
+            "ads_above_fold": breakdown["above_fold"],
+            "ads_mid_page": breakdown["mid_page"],
+            "ads_deep": breakdown["deep"],
+            "ads_footer": breakdown["footer"],
+            "ads_sticky": breakdown["sticky"],
+            "content_lang": content_lang,
+            "cookie_dismissed": cookie_dismissed,
+            "page_load_time_ms": page_load_time_ms,
+            "adtech": adtech,
+            "trackers": trackers,
+            "network_stats": net_stats,
+            "detection_method": detection_method,
+            "dom_ad_count": len(ads),
+            "network_ad_requests": net_stats.get("ad_requests", 0),
+            "network_ad_domains": net_stats.get("ad_domains", []),
+            "network_tracker_requests": net_stats.get("tracker_requests", 0),
+            # Screenshot fields
+            "viewport_path": viewport_path,
+            "fullpage_path": fullpage_path,
+            "error": None,
+        }
+    except Exception as e:
+        remove_network_listener(page)
+        return {
+            "ad_count": 0, "score": 5.0, "is_mfa": False,
+            "details": {},
+            "ads_above_fold": 0, "ads_mid_page": 0,
+            "ads_deep": 0, "ads_footer": 0, "ads_sticky": 0,
+            "content_lang": "", "cookie_dismissed": False,
+            "page_load_time_ms": 0,
+            "adtech": {"scripts_detected": []},
+            "trackers": {"total": 0},
+            "network_stats": {"ad_requests": 0, "ad_visual_requests": 0, "ad_domains": [], "tracker_requests": 0, "tracker_domains": [], "total_intercepted": 0},
+            "detection_method": "none",
+            "dom_ad_count": 0, "network_ad_requests": 0,
+            "network_ad_domains": [], "network_tracker_requests": 0,
+            "viewport_path": "", "fullpage_path": "",
+            "error": str(e)[:200],
+        }
+
+
 def extract_metadata(page, domain: str) -> dict:
     """Extrait title, meta description, h1."""
     url = f"https://{domain}"
@@ -1304,28 +1648,28 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         _log(f"    [nav] goto {url}...")
         t_start = _time.monotonic()
         try:
-            page.goto(url, timeout=25_000, wait_until="load")
+            page.goto(url, timeout=20_000, wait_until="load")
             load_ms = int((_time.monotonic() - t_start) * 1000)
             _log(f"    [nav] Charge en {load_ms}ms")
         except Exception as e:
             load_ms = int((_time.monotonic() - t_start) * 1000)
-            _log(f"    [nav] Timeout/erreur {load_ms}ms: {str(e)[:80]} — on continue")
+            _log(f"    [nav] Timeout/erreur {load_ms}ms — on continue")
 
-        _log(f"    [cmp] Attente CMP 2s...")
-        page.wait_for_timeout(2000)
+        _log(f"    [cmp] Detection CMP...")
+        page.wait_for_timeout(800)
         cookie_dismissed = dismiss_cookie_banner(page)
-        _log(f"    [cmp] Cookie: {'CLIQUE' if cookie_dismissed else 'pas trouve'}")
+        _log(f"    [cmp] Cookie: {'CLIQUE' if cookie_dismissed else 'absent'}")
         n_removed = force_remove_overlays(page)
-        _log(f"    [cmp] Overlays supprimes: {n_removed}")
-        _log(f"    [ads] Attente 4s post-consent...")
-        page.wait_for_timeout(4000)
+        if n_removed:
+            _log(f"    [cmp] {n_removed} overlays supprimes")
+        _log(f"    [ads] Attente adaptative (max 3s)...")
+        _wait_for_ads(page, max_ms=3000)
         _log(f"    [scroll] Scroll complet...")
         scroll_full_page(page)
-        _log(f"    [scroll] Attente 2s lazy ads...")
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(1000)
         page.evaluate("window.scrollTo(0, 0)")
-        _log(f"    [ads] Attente 5s Prebid/GPT...")
-        page.wait_for_timeout(5000)
+        _log(f"    [ads] Attente auctions (max 3s)...")
+        _wait_for_ads(page, max_ms=3000)
 
         _log(f"    [dom] Detection + highlighting...")
         ads = analyze_ads_multi_layer(page, highlight=True)
@@ -1425,6 +1769,36 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
         }
 
 
+def _error_result(mode: str, error: str) -> dict:
+    """Return a safe error result dict for any mode."""
+    if mode in ("attention", "full"):
+        return {
+            "ad_count": 0, "score": 5.0, "is_mfa": False, "details": {},
+            "ads_above_fold": 0, "ads_mid_page": 0, "ads_deep": 0,
+            "ads_footer": 0, "ads_sticky": 0,
+            "content_lang": "", "cookie_dismissed": False,
+            "page_load_time_ms": 0,
+            "adtech": {"scripts_detected": []},
+            "trackers": {"total": 0},
+            "network_stats": {"ad_requests": 0, "ad_visual_requests": 0, "ad_domains": [], "tracker_requests": 0, "tracker_domains": [], "total_intercepted": 0},
+            "detection_method": "none",
+            "dom_ad_count": 0, "network_ad_requests": 0,
+            "network_ad_domains": [], "network_tracker_requests": 0,
+            "viewport_path": "", "fullpage_path": "",
+            "error": error[:200],
+        }
+    elif mode == "screenshot":
+        return {
+            "viewport_path": "", "fullpage_path": "",
+            "ad_count": 0, "score": 5.0, "breakdown": {},
+            "cookie_dismissed": False,
+            "adtech": {"scripts_detected": []},
+            "trackers": {"total": 0},
+            "error": error[:200],
+        }
+    return {"title": "", "description": "", "h1": ""}
+
+
 def main():
     raw = sys.stdin.read()
     request = json.loads(raw)
@@ -1435,14 +1809,12 @@ def main():
     total = len(domains)
 
     _log(f"[pw_worker] START mode={mode} domains={total}")
-    _log(f"[pw_worker] Lancement Playwright Chromium headless...")
 
     results = {}
 
     with sync_playwright() as pw:
-        _log(f"[pw_worker] Playwright initialise, lancement navigateur...")
+        _log(f"[pw_worker] Lancement navigateur...")
         browser = pw.chromium.launch(headless=True)
-        _log(f"[pw_worker] Navigateur lance, creation contexte (1280x800)...")
         context = browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent=(
@@ -1451,79 +1823,47 @@ def main():
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
         )
-
-        # Inject localStorage consent mock on every new page
         context.add_init_script(CONSENT_INIT_SCRIPT)
-        _log(f"[pw_worker] Consent init script injecte")
+        _log(f"[pw_worker] Contexte pret")
 
         for i, domain in enumerate(domains):
-            t_domain_start = _time.monotonic()
-            _log(f"[{i+1}/{total}] ━━ {domain} ━━━━━━━━━━━━━━━━━━")
+            t_start = _time.monotonic()
+            _log(f"[{i+1}/{total}] -- {domain} --")
 
-            # Inject consent cookies for this domain BEFORE navigating
             try:
                 context.add_cookies(get_consent_cookies(domain))
-                _log(f"  [cookies] {len(get_consent_cookies(domain))} cookies consent injectes")
-            except Exception as e:
-                _log(f"  [cookies] ERREUR injection: {e}")
+            except Exception:
+                pass
 
-            _log(f"  [page] Ouverture nouvelle page...")
             page = context.new_page()
             try:
-                if mode == "attention":
-                    _log(f"  [mode] score_attention...")
+                if mode == "full":
+                    results[domain] = full_audit(page, domain, output_dir)
+                elif mode == "attention":
                     results[domain] = score_attention(page, domain)
                 elif mode == "screenshot":
-                    _log(f"  [mode] screenshot_with_ads...")
                     results[domain] = screenshot_with_ads(page, domain, output_dir)
                 else:
-                    _log(f"  [mode] extract_metadata...")
                     results[domain] = extract_metadata(page, domain)
 
-                elapsed = int((_time.monotonic() - t_domain_start) * 1000)
-                score = results[domain].get("score", "?")
+                elapsed = int((_time.monotonic() - t_start) * 1000)
                 err = results[domain].get("error", "")
                 if err:
-                    _log(f"  [RESULT] {domain} — score={score} — ERREUR: {err} — {elapsed}ms")
+                    _log(f"  [RESULT] {domain} -- ERR: {err} -- {elapsed}ms")
                 else:
+                    score = results[domain].get("score", "?")
                     ad_count = results[domain].get("ad_count", "?")
-                    _log(f"  [RESULT] {domain} — score={score} ads={ad_count} — {elapsed}ms ✓")
+                    _log(f"  [RESULT] {domain} -- score={score} ads={ad_count} -- {elapsed}ms OK")
             except Exception as e:
-                elapsed = int((_time.monotonic() - t_domain_start) * 1000)
-                _log(f"  [CRASH] {domain} — {str(e)[:150]} — {elapsed}ms")
-                if mode == "attention":
-                    results[domain] = {
-                        "ad_count": 0, "score": 5.0, "is_mfa": False, "details": {},
-                        "ads_above_fold": 0, "ads_mid_page": 0, "ads_deep": 0,
-                        "ads_footer": 0, "ads_sticky": 0,
-                        "content_lang": "", "cookie_dismissed": False,
-                        "page_load_time_ms": 0,
-                        "adtech": {"scripts_detected": []},
-                        "trackers": {"total": 0},
-                        "network_stats": {"ad_requests": 0, "ad_visual_requests": 0, "ad_domains": [], "tracker_requests": 0, "tracker_domains": [], "total_intercepted": 0},
-                        "detection_method": "none",
-                        "dom_ad_count": 0, "network_ad_requests": 0,
-                        "network_ad_domains": [], "network_tracker_requests": 0,
-                        "error": str(e)[:200],
-                    }
-                elif mode == "screenshot":
-                    results[domain] = {
-                        "viewport_path": "", "fullpage_path": "",
-                        "ad_count": 0, "score": 5.0, "breakdown": {},
-                        "cookie_dismissed": False,
-                        "adtech": {"scripts_detected": []},
-                        "trackers": {"total": 0},
-                        "error": str(e)[:200],
-                    }
-                else:
-                    results[domain] = {"title": "", "description": "", "h1": ""}
+                elapsed = int((_time.monotonic() - t_start) * 1000)
+                _log(f"  [CRASH] {domain} -- {str(e)[:120]} -- {elapsed}ms")
+                results[domain] = _error_result(mode, str(e))
             finally:
                 page.close()
-                _log(f"  [page] Fermee")
 
-        _log(f"[pw_worker] Tous les domaines traites, fermeture navigateur...")
+        _log(f"[pw_worker] Fermeture navigateur...")
         browser.close()
-        _log(f"[pw_worker] DONE — {total} domaines")
+        _log(f"[pw_worker] DONE -- {total} domaines")
 
     json.dump(results, sys.stdout, ensure_ascii=False)
 

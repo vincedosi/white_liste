@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { AuditRequest } from '@/lib/types';
 
 // Direct backend URL — Next.js rewrite proxy buffers SSE, so bypass it.
-const BACKEND_URL = 'http://localhost:8002/api';
+const BACKEND_URL = 'http://localhost:8005/api';
 
 export interface AuditStreamState {
   logs: string[];
@@ -44,12 +44,13 @@ export function useAuditStream(): UseAuditStreamReturn {
 
     const xhr = new XMLHttpRequest();
     xhrRef.current = xhr;
-    let processed = 0; // how many chars we've already parsed
+    let processed = 0;
+    // MUST persist across onprogress calls — SSE event/data may arrive in separate chunks
+    let currentEvt = '';
 
     xhr.open('POST', `${BACKEND_URL}/audit`);
     xhr.setRequestHeader('Content-Type', 'application/json');
 
-    // Process SSE chunks as they arrive
     xhr.onprogress = () => {
       const text = xhr.responseText;
       const newText = text.slice(processed);
@@ -57,15 +58,19 @@ export function useAuditStream(): UseAuditStreamReturn {
 
       if (!newText) return;
 
-      // Parse SSE lines
       const lines = newText.split('\n');
-      let currentEvt = '';
 
       for (const line of lines) {
         const trimmed = line.trim();
 
+        // Empty line = end of SSE message
         if (trimmed === '') {
           currentEvt = '';
+          continue;
+        }
+
+        // SSE comment (ping/keepalive from sse-starlette)
+        if (trimmed.startsWith(':')) {
           continue;
         }
 
@@ -126,16 +131,17 @@ export function useAuditStream(): UseAuditStreamReturn {
               break;
 
             default:
+              // No event prefix — treat as log
+              if (rawData) {
+                setLogs((prev) => [...prev, rawData]);
+              }
               break;
           }
-
-          currentEvt = '';
         }
       }
     };
 
     xhr.onload = () => {
-      // Stream finished — ensure we mark as done
       setIsRunning(false);
     };
 
@@ -149,9 +155,7 @@ export function useAuditStream(): UseAuditStreamReturn {
       setIsRunning(false);
     };
 
-    // No timeout — audits can take 30+ minutes
     xhr.timeout = 0;
-
     xhr.send(JSON.stringify(request));
   }, []);
 

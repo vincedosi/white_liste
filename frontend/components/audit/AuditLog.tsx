@@ -2,7 +2,6 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import { Download } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
 
 interface AuditLogProps {
   logs: string[];
@@ -33,13 +32,13 @@ export function AuditLog({ logs, isRunning }: AuditLogProps) {
     <div className="relative">
       <div
         ref={scrollRef}
-        className="bg-sidebar rounded-xl p-4 max-h-72 overflow-y-auto font-mono text-xs leading-relaxed"
+        className="bg-surface-low rounded-xl border border-outline-variant/50 p-4 max-h-72 overflow-y-auto font-label text-xs leading-relaxed font-light"
       >
         {logs.length === 0 && (
-          <span className="text-white/20 select-none">En attente du lancement...</span>
+          <span className="text-white/15 select-none font-extralight">En attente du lancement...</span>
         )}
         {logs.map((line, i) => (
-          <div key={i} className="text-white/50 whitespace-pre-wrap break-all">
+          <div key={i} className="text-on-surface-variant whitespace-pre-wrap break-all">
             {colorize(line)}
           </div>
         ))}
@@ -52,10 +51,13 @@ export function AuditLog({ logs, isRunning }: AuditLogProps) {
 
       {!isRunning && logs.length > 0 && (
         <div className="flex justify-end mt-2">
-          <Button variant="ghost" size="sm" onClick={handleDownload}>
-            <Download size={12} />
+          <button
+            onClick={handleDownload}
+            className="flex items-center gap-1.5 font-label text-[9px] text-on-surface-variant uppercase tracking-[0.15em] font-extralight hover:text-accent transition-colors"
+          >
+            <Download size={11} />
             Telecharger
-          </Button>
+          </button>
         </div>
       )}
     </div>
@@ -63,15 +65,13 @@ export function AuditLog({ logs, isRunning }: AuditLogProps) {
 }
 
 function colorize(line: string): React.ReactNode {
-  if (line.includes('━━')) return <span className="text-accent font-semibold">{line}</span>;
-  if (line.includes('✓') || line.includes('OK')) return <span className="text-emerald-400/80">{line}</span>;
-  if (line.includes('✗') || line.includes('ERREUR') || line.includes('ERROR')) return <span className="text-red-400">{line}</span>;
-  if (line.includes('⚠') || line.includes('WARN')) return <span className="text-amber-400">{line}</span>;
+  if (line.includes('━━')) return <span className="text-accent font-light">{line}</span>;
+  if (line.includes('✓') || line.includes('OK')) return <span className="text-secondary/80">{line}</span>;
+  if (line.includes('✗') || line.includes('ERREUR') || line.includes('ERROR')) return <span className="text-danger">{line}</span>;
+  if (line.includes('⚠') || line.includes('WARN')) return <span className="text-warning">{line}</span>;
   if (/^\[[\d:]+\]/.test(line)) {
     const match = line.match(/^(\[[\d:]+\])(.*)$/);
-    if (match) {
-      return <><span className="text-white/25">{match[1]}</span><span>{match[2]}</span></>;
-    }
+    if (match) return <><span className="text-white/20">{match[1]}</span><span>{match[2]}</span></>;
   }
   return line;
 }

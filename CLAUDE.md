@@ -2,85 +2,118 @@
 
 ## Projet
 Plateforme d'audit automatisé de whitelists programmatiques.
-**Stack** : Python 3.13 + Streamlit + Playwright + Mistral AI
+**Stack** : Python 3.13 + Next.js 14 + FastAPI + Playwright + Mistral AI
 **Cible** : Traders programmatiques, équipes media
 **Contexte** : Outil interne Dentsu Programmatic Intelligence
 
 ## Architecture
 ```
 mli_crawler/
-├── app.py                  ← Interface Streamlit (FICHIER PRINCIPAL)
-├── CLAUDE.md               ← Contexte projet (ce fichier)
-├── DESIGN.md               ← Système de design (LIRE AVANT TOUT CHANGEMENT UI)
-├── TODO.md                 ← Tâches en cours
-├── ADTECH.md               ← Référence détection publicitaire et ad-tech
-├── config.py               ← Paramètres (concurrency, seuils, taxonomie)
-├── models.py               ← Dataclasses (SiteAudit, AuditReport, enums)
-├── health_checker.py       ← Module 1 : check HTTP async (httpx)
-├── pw_worker.py            ← Worker Playwright autonome (subprocess)
-├── pw_bridge.py            ← Bridge : appelle pw_worker via subprocess
-├── ads_txt_checker.py      ← Module 4 : vérification ads.txt
-├── geo_locator.py          ← Module 5 : géolocalisation IP + TLD + langue
-├── mistral_validator.py    ← Validation clé API Mistral
-├── categorizer.py          ← Module 3 : catégorisation Mistral
-├── exporter.py             ← Export JSON + Excel (CLI)
-├── pipeline.py             ← Orchestrateur CLI
-├── main.py                 ← CLI entry point
-├── attention_scorer.py     ← LEGACY — ne plus utiliser
+├── CLAUDE.md                   ← Contexte projet (ce fichier)
+├── DESIGN.md                   ← Système de design (LIRE AVANT TOUT CHANGEMENT UI)
+├── TODO.md                     ← Tâches en cours
+├── ADTECH.md                   ← Référence détection publicitaire et ad-tech
+├── app.py                      ← Interface Streamlit LEGACY (ne plus toucher)
+│
+├── backend/                    ← API FastAPI (port 8003)
+│   ├── main.py                 ← Entry point FastAPI + CORS + static files
+│   ├── config.py               ← Paramètres (concurrency, seuils, taxonomie)
+│   ├── models.py               ← Pydantic models (SiteAudit, AuditReport, enums)
+│   ├── routers/
+│   │   ├── audit.py            ← SSE endpoint /api/audit (pipeline complet)
+│   │   ├── history.py          ← CRUD /api/audits + /api/screenshots
+│   │   └── health.py           ← /api/health
+│   └── services/
+│       ├── pw_worker.py        ← Worker Playwright (subprocess, stdin/stdout)
+│       ├── pw_bridge.py        ← Bridge v4 : Popen + stderr live streaming
+│       ├── health_checker.py   ← Health check HTTP async (httpx)
+│       ├── ads_txt_checker.py  ← Vérification ads.txt
+│       ├── geo_locator.py      ← Géolocalisation IP batch (ip-api.com)
+│       └── categorizer.py      ← Catégorisation Mistral AI
+│
+├── frontend/                   ← Next.js 14 (port 3001)
+│   ├── app/
+│   │   ├── page.tsx            ← Page d'accueil — nouvel audit
+│   │   ├── audit/[id]/page.tsx ← Dashboard résultats d'un audit
+│   │   └── history/page.tsx    ← Historique avec sélection bulk
+│   ├── hooks/
+│   │   └── useAuditStream.ts   ← SSE via XMLHttpRequest (bypass proxy)
+│   ├── components/
+│   │   ├── audit/              ← AuditProgress, AuditLog
+│   │   ├── dashboard/          ← SiteTable, SiteModal, ServerMap, etc.
+│   │   ├── layout/             ← Header, Sidebar
+│   │   └── ui/                 ← Card, Button, Badge
+│   ├── lib/
+│   │   ├── api.ts              ← Client API (fetch + screenshot URL helper)
+│   │   ├── types.ts            ← Types TypeScript partagés
+│   │   └── constants.ts        ← Constantes UI
+│   └── next.config.js          ← Rewrite proxy /api → backend:8003
+│
 └── output/
-    └── screenshots/        ← Captures Playwright
+    ├── history/                ← Rapports JSON sauvegardés
+    └── screenshots/            ← Captures PNG Playwright
 ```
 
 ## Règles critiques
 
 ### Playwright = TOUJOURS via subprocess
-Streamlit + Windows ProactorEventLoop = crash avec Playwright.
-NE JAMAIS importer playwright dans app.py.
-Utiliser UNIQUEMENT les fonctions de `pw_bridge.py` :
-- `score_all_subprocess(domains)` → `(attention_results, content_langs)`
-- `extract_metadata_subprocess(domains)` → `dict[domain -> metadata]`
-- `screenshot_all_subprocess(domains, output_dir)` → `dict[domain -> screenshot_data]`
+Windows ProactorEventLoop = crash avec Playwright dans le process principal.
+NE JAMAIS importer playwright dans le backend FastAPI directement.
+Utiliser UNIQUEMENT `pw_bridge.py` qui lance `pw_worker.py` via `subprocess.Popen`.
 
-### Async dans Streamlit
-- `health_checker.py` et `ads_txt_checker.py` → `asyncio.run()`
-- `geo_locator.py` → appel direct (sync)
-- `categorizer.py` → appel direct (sync)
+### Fonctions pw_bridge.py
+- `full_audit_subprocess(domains, output_dir)` → scoring + screenshots en 1 passe
+- `score_all_subprocess(domains)` → scoring seul (sans screenshots)
+- `screenshot_all_subprocess(domains, output_dir)` → screenshots seul
+- `extract_metadata_subprocess(domains)` → metadata pour catégorisation
 
-### Pipeline dans app.py (ordre d'exécution)
-1. **Health Check** — `asyncio.run(check_all(domains))`
-2. **Score d'Attention** — `score_all_subprocess(alive_domains)` 
-3. **ads.txt** — `asyncio.run(check_all_ads_txt(alive_domains))` 
-4. **Localisation** — `localize_all(alive_domains, content_langs)` (lent: 1.5s/site)
-5. **Catégorisation IA** — `categorize_all(alive_domains, metadata_map)` (clé Mistral)
-6. **Screenshots** — `screenshot_all_subprocess(alive_domains, output_dir)`
+### Mode full (single-pass)
+Quand attention ET screenshots sont activés, le pipeline utilise `full_audit_subprocess`
+qui fait score + highlight + capture en UNE SEULE navigation par domaine (~15s/site).
+Cela remplace l'ancien système à 2 passes (~40s/site).
 
-### Score d'attention pondéré par zone
-Les pubs ne comptent PAS toutes pareil :
-- Above the fold (0-800px) = poids ×1.0
-- Mid-page (800-2000px) = poids ×0.5
-- Deep (2000-4000px) = poids ×0.2
-- Footer (4000px+) = poids ×0.05
-- Sticky/fixed = multiplicateur ×1.5
-- Taille pub : petit (×0.5), standard (×1.0), intrusif (×1.5)
-Champs : `ads_above_fold`, `ads_mid_page`, `ads_deep`, `ads_footer`, `ads_sticky`
+### Pipeline SSE dans audit.py (ordre d'exécution)
+1. **Health Check** — httpx async, timeout 8s, 1 retry
+2. **Playwright** — `full_audit_subprocess` ou `score_all_subprocess`
+   - Attentes adaptatives (détection CMP, détection iframes pub)
+   - Scroll rapide (1200px/60ms)
+   - Clutter score (ratio surface pub/viewport à 3 positions)
+3. **ads.txt** — httpx async parallèle
+4. **Géolocalisation** — DNS batch + ip-api.com batch (1 appel pour toutes les IPs)
+5. **Catégorisation IA** — Mistral API séquentielle
+6. **Screenshots** — skip si déjà fait par full_audit (étape 2)
+
+### SSE Streaming
+- Backend envoie des événements SSE (log, step, heartbeat, complete, error)
+- `_run_with_heartbeat()` maintient la connexion pendant les opérations longues
+- Les logs stderr de pw_worker sont streamés en temps réel via un thread
+- Frontend utilise `XMLHttpRequest.onprogress` (pas fetch, pas EventSource)
+- Le frontend appelle le backend DIRECTEMENT (port 8003), PAS via le proxy Next.js
+  (le proxy Next.js bufferise les SSE)
+
+### Score d'encombrement (clutter score)
+Score principal basé sur le ratio de surface pub/viewport mesuré à 3 positions :
+- ATF (above the fold) = poids 50%
+- Mid-page (50% scroll) = poids 30%
+- Deep (80% scroll) = poids 20%
+Formula : `10 × (1 - weighted_ratio)`
+Seuil MFA : score < 4.0
 
 ### Screenshots
-Deux fichiers par site :
-- `viewport_path` : 1280×800 (above the fold) — vue principale
-- `fullpage_path` : page complète — dans un expander/modal
-Les pubs surlignées en rouge avec label de zone (ATF, MID, DEEP, FOOTER, STICKY).
+Deux fichiers par site dans `output/screenshots/` :
+- `{domain}_viewport.png` : 1280×800 (above the fold)
+- `{domain}_full.png` : page complète
+Les pubs sont surlignées en rouge avec label de zone (ATF, MID, DEEP, FOOTER, STICKY).
+Bandeau MLI en haut avec score et stats.
 
-### Screenshots en MODAL pas en onglet
-Les screenshots ne sont PAS dans un onglet séparé.
-Dans les tableaux, chaque domaine est un bouton cliquable.
-Au clic → `@st.dialog` avec :
-- Screenshot viewport en miniature
-- Score + breakdown par zone
-- `st.expander("Page complète")` avec fullpage
+### Carte géo (ServerMap)
+Choroplèthe mondial avec `world-map-country-shapes` (211 pays).
+Pays colorés par densité de serveurs et action (vert/ambre/rouge).
+Pays sans données = gris clair. Tooltip au hover.
 
-### Journal de logs
-L'app doit afficher un journal de logs PERSISTANT dans un onglet dédié.
-Voir DESIGN.md et TODO.md pour les détails.
+### Suppression d'audit
+La suppression d'un audit supprime le JSON ET les screenshots PNG associées.
+La page historique supporte la sélection bulk + suppression en masse.
 
 ## Design
 
@@ -91,6 +124,6 @@ PAS de Streamlit brut — override CSS agressif de tout le theming.
 Typo : Plus Jakarta Sans + JetBrains Mono.
 
 ## Fichiers de référence
-- **DESIGN.md** : Design system dark mode complet (LIRE EN PREMIER)
+- **DESIGN.md** : Design system complet (LIRE EN PREMIER)
 - **ADTECH.md** : Détection publicitaire multi-couche (refonte complète)
 - **TODO.md** : Liste des tâches à exécuter dans l'ordre
