@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, PlusCircle, List, Activity, Settings, LogOut, Menu, X, ChevronDown, Layers, Shield } from 'lucide-react';
+import { BarChart3, PlusCircle, List, Activity, Settings, LogOut, Menu, X, ChevronDown, Layers, Shield, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthContext';
 import clsx from 'clsx';
@@ -15,13 +15,16 @@ export function Sidebar() {
 
   const wsId = currentWorkspace?.id;
 
-  const NAV_ITEMS = wsId ? [
-    { href: `/workspaces/${wsId}`, label: 'Dashboard', icon: BarChart3 },
-    { href: `/workspaces/${wsId}/audit/new`, label: 'Nouvel Audit', icon: PlusCircle },
-    { href: `/workspaces/${wsId}/whitelists`, label: 'Whitelists', icon: List },
-    { href: `/workspaces/${wsId}/activity`, label: 'Activite', icon: Activity },
-    { href: `/workspaces/${wsId}/settings`, label: 'Parametres', icon: Settings },
-  ] : [];
+  const NAV_ITEMS = [
+    { href: '/sites', label: 'Sites Intelligence', icon: Globe },
+    ...(wsId ? [
+      { href: `/workspaces/${wsId}`, label: 'Dashboard', icon: BarChart3 },
+      { href: `/workspaces/${wsId}/audit/new`, label: 'Nouvel Audit', icon: PlusCircle },
+      { href: `/workspaces/${wsId}/whitelists`, label: 'Whitelists', icon: List },
+      { href: `/workspaces/${wsId}/activity`, label: 'Activite', icon: Activity },
+      { href: `/workspaces/${wsId}/settings`, label: 'Parametres', icon: Settings },
+    ] : []),
+  ];
 
   if (loading || !user) return null;
 

@@ -16,13 +16,7 @@ export default function RootPage() {
       return;
     }
 
-    if (currentWorkspace) {
-      router.replace(`/workspaces/${currentWorkspace.id}`);
-    } else if (workspaces.length > 0) {
-      router.replace(`/workspaces/${workspaces[0].id}`);
-    } else {
-      router.replace('/workspaces');
-    }
+    router.replace('/sites');
   }, [loading, user, workspaces, currentWorkspace, router]);
 
   return (
