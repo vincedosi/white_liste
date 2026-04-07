@@ -2,7 +2,7 @@
 /* MLI — API client with auth                                         */
 /* ------------------------------------------------------------------ */
 
-import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse, Workspace, WorkspaceDetail, Whitelist, ActivityEntry } from './types';
+import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse, Workspace, WorkspaceDetail, Whitelist, ActivityEntry, DomainEntry, DomainListResponse, CategorizeResult } from './types';
 
 const API_BASE = '/api';
 
@@ -254,4 +254,47 @@ export async function getAudit(id: string): Promise<AuditResult> {
 export async function deleteAudit(id: string): Promise<void> {
   const res = await fetchWithAuth(`${API_BASE}/audits/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Failed to delete audit: ${res.status}`);
+}
+
+/* ── Admin ── */
+
+export async function getAdminDomains(params: {
+  page?: number; per_page?: number; sort?: string; order?: string;
+  search?: string; status?: string; brand_safety?: string; health?: string; category?: string;
+} = {}): Promise<DomainListResponse> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, String(v)); });
+  const res = await fetchWithAuth(`${API_BASE}/admin/domains?${qs}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateDomain(id: string, data: Record<string, unknown>): Promise<DomainEntry> {
+  const res = await fetchWithAuth(`${API_BASE}/admin/domains/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteDomainEntry(id: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/admin/domains/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+}
+
+export async function categorizeDomains(domainIds: string[], mistralKey?: string): Promise<{ results: CategorizeResult[]; processed: number; errors: number }> {
+  const res = await fetchWithAuth(`${API_BASE}/admin/domains/categorize`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ domain_ids: domainIds, ...(mistralKey ? { mistral_key: mistralKey } : {}) }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function bulkDomainAction(domainIds: string[], action: string, value?: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/admin/domains/bulk`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ domain_ids: domainIds, action, value }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
 }

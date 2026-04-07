@@ -251,3 +251,52 @@ export interface MeResponse {
   user: User;
   workspaces: Workspace[];
 }
+
+/* ---- Admin types ------------------------------------------------ */
+
+export interface DomainEntry {
+  id: string;
+  domain: string;
+  editorial_status: 'pending' | 'validated' | 'blacklisted';
+  brand_safety: 'safe' | 'moderate' | 'unsafe' | null;
+  brand_safety_source: 'mistral' | 'manual' | null;
+  category_iab: string | null;
+  category_source: 'mistral' | 'manual' | null;
+  notes: string | null;
+  tags: string[];
+  tags_json: string;
+  last_score: number | null;
+  last_score_trend: 'up' | 'down' | 'stable' | null;
+  last_health: 'ok' | 'dead' | null;
+  last_ads_txt: number | null;
+  last_ad_count: number | null;
+  last_load_time_ms: number | null;
+  last_trackers: number | null;
+  adtech: Record<string, boolean>;
+  last_adtech_json: string | null;
+  last_country: string | null;
+  last_lang: string | null;
+  last_tld: string | null;
+  last_audit_id: string | null;
+  last_audit_date: string | null;
+  audit_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DomainListResponse {
+  domains: DomainEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface CategorizeResult {
+  domain_id: string;
+  domain: string;
+  category_iab?: string;
+  brand_safety?: string;
+  confidence?: number;
+  error?: string;
+}
