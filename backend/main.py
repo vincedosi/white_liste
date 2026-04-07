@@ -18,6 +18,8 @@ from routers.auth_routes import router as auth_router
 from routers.workspaces import router as workspaces_router
 from routers.whitelists import router as whitelists_router
 from routers.activity import router as activity_router
+from routers.export import router as export_router
+from routers.invites import router as invites_router
 
 app = FastAPI(
     title="MLI - Media List Intelligence",
@@ -60,6 +62,8 @@ app.include_router(auth_router)
 app.include_router(workspaces_router)
 app.include_router(whitelists_router)
 app.include_router(activity_router)
+app.include_router(export_router)
+app.include_router(invites_router)
 
 # ── Static files for screenshots ─────────────────────────
 SCREENSHOTS_DIR = Path(__file__).parent.parent / "output" / "screenshots"
