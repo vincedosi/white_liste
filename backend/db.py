@@ -334,3 +334,90 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
             ),
         )
     await db.commit()
+
+
+async def backfill_domains_from_audits() -> None:
+    """Backfill domains table from existing audit results_json (one-time migration)."""
+    import json as json_mod
+
+    db = await get_db()
+
+    # Check if migration already ran
+    already = await fetch_one("SELECT key FROM _migrations WHERE key = ?", ("backfill_domains_v1",))
+    if already:
+        return
+
+    audits = await fetch_all(
+        "SELECT id, results_json, created_at FROM audits WHERE results_json IS NOT NULL ORDER BY created_at ASC"
+    )
+
+    backfilled = 0
+    for audit_row in audits:
+        audit_id = audit_row["id"]
+        audit_date = audit_row["created_at"]
+
+        try:
+            results = json_mod.loads(audit_row["results_json"])
+        except Exception:
+            continue
+
+        if not isinstance(results, list):
+            continue
+
+        for site in results:
+            if not isinstance(site, dict):
+                continue
+
+            domain_name = site.get("domain", "")
+            if not domain_name:
+                continue
+
+            # Skip if domain already exists
+            existing = await fetch_one("SELECT id FROM domains WHERE domain = ?", (domain_name,))
+            if existing:
+                continue
+
+            # Safely extract nested dicts
+            attention = site.get("attention") if isinstance(site.get("attention"), dict) else {}
+            health = site.get("health") if isinstance(site.get("health"), dict) else {}
+            ads_txt = site.get("ads_txt") if isinstance(site.get("ads_txt"), dict) else {}
+            geo = site.get("geo") if isinstance(site.get("geo"), dict) else {}
+            adtech = site.get("adtech") if isinstance(site.get("adtech"), dict) else {}
+
+            score = attention.get("score") if attention else None
+            health_status = health.get("status") if health else None
+            ads_txt_present = 1 if ads_txt.get("present") else 0
+            ad_count = (
+                attention.get("raw_ad_count")
+                or attention.get("ad_count")
+                or 0
+            ) if attention else 0
+            load_time_ms = health.get("response_time_ms") or 0 if health else 0
+            country = geo.get("country") or "" if geo else ""
+            lang = geo.get("content_lang") or "" if geo else ""
+            tld = geo.get("tld") or "" if geo else ""
+
+            audit_data = {
+                "score": score,
+                "health": health_status,
+                "ads_txt": ads_txt_present,
+                "ad_count": ad_count,
+                "load_time_ms": load_time_ms,
+                "trackers": 0,
+                "adtech": adtech,
+                "country": country,
+                "lang": lang,
+                "tld": tld,
+                "audit_id": audit_id,
+                "audit_date": audit_date,
+            }
+
+            await upsert_domain(domain_name, audit_data)
+            backfilled += 1
+
+    await db.execute(
+        "INSERT INTO _migrations (key, done_at) VALUES (?, ?)",
+        ("backfill_domains_v1", _now()),
+    )
+    await db.commit()
+    print(f"[MLI] Backfilled {backfilled} domains from audit history")
