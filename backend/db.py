@@ -116,6 +116,34 @@ async def init_db() -> None:
             accepted_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS domains (
+            id TEXT PRIMARY KEY,
+            domain TEXT UNIQUE NOT NULL,
+            editorial_status TEXT NOT NULL DEFAULT 'pending',
+            brand_safety TEXT,
+            brand_safety_source TEXT,
+            category_iab TEXT,
+            category_source TEXT,
+            notes TEXT,
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            last_score REAL,
+            last_score_trend TEXT,
+            last_health TEXT,
+            last_ads_txt INTEGER,
+            last_ad_count INTEGER,
+            last_load_time_ms INTEGER,
+            last_trackers INTEGER,
+            last_adtech_json TEXT,
+            last_country TEXT,
+            last_lang TEXT,
+            last_tld TEXT,
+            last_audit_id TEXT,
+            last_audit_date TEXT,
+            audit_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS _migrations (
             key TEXT PRIMARY KEY,
             done_at TEXT NOT NULL
@@ -246,3 +274,63 @@ async def migrate_json_audits() -> None:
     await db.execute("INSERT INTO _migrations (key, done_at) VALUES (?, ?)", ("migrate_json", _now()))
     await db.commit()
     print(f"[MLI] Migrated {imported} audits into workspace 'Default'")
+
+
+async def upsert_domain(domain_name: str, audit_data: dict) -> None:
+    """Insert or update a domain in the global domains table after an audit."""
+    import json as json_mod
+    db = await get_db()
+    existing = await fetch_one("SELECT id, last_score FROM domains WHERE domain = ?", (domain_name,))
+
+    new_score = audit_data.get("score")
+    now = _now()
+
+    if existing:
+        old_score = existing["last_score"]
+        if old_score is None or new_score is None:
+            trend = "stable"
+        elif new_score > old_score:
+            trend = "up"
+        elif new_score < old_score:
+            trend = "down"
+        else:
+            trend = "stable"
+
+        await db.execute(
+            """UPDATE domains SET
+                last_score = ?, last_score_trend = ?, last_health = ?,
+                last_ads_txt = ?, last_ad_count = ?, last_load_time_ms = ?,
+                last_trackers = ?, last_adtech_json = ?,
+                last_country = ?, last_lang = ?, last_tld = ?,
+                last_audit_id = ?, last_audit_date = ?,
+                audit_count = audit_count + 1, updated_at = ?
+            WHERE id = ?""",
+            (
+                new_score, trend, audit_data.get("health"),
+                audit_data.get("ads_txt"), audit_data.get("ad_count"),
+                audit_data.get("load_time_ms"), audit_data.get("trackers"),
+                json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
+                audit_data.get("country"), audit_data.get("lang"), audit_data.get("tld"),
+                audit_data.get("audit_id"), audit_data.get("audit_date"),
+                now, existing["id"],
+            ),
+        )
+    else:
+        await db.execute(
+            """INSERT INTO domains
+            (id, domain, editorial_status, last_score, last_score_trend, last_health,
+             last_ads_txt, last_ad_count, last_load_time_ms, last_trackers, last_adtech_json,
+             last_country, last_lang, last_tld, last_audit_id, last_audit_date,
+             audit_count, created_at, updated_at)
+            VALUES (?, ?, 'pending', ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (
+                _uuid(), domain_name, new_score, audit_data.get("health"),
+                audit_data.get("ads_txt"), audit_data.get("ad_count"),
+                audit_data.get("load_time_ms"), audit_data.get("trackers"),
+                json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
+                audit_data.get("country"), audit_data.get("lang"), audit_data.get("tld"),
+                audit_data.get("audit_id"), audit_data.get("audit_date"),
+                now, now,
+            ),
+        )
+    await db.commit()
