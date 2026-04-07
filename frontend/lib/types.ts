@@ -300,3 +300,55 @@ export interface CategorizeResult {
   confidence?: number;
   error?: string;
 }
+
+/* ── Sites Intelligence ── */
+
+export interface SiteEntry {
+  id: string;
+  domain: string;
+  editorial_status: 'pending' | 'validated' | 'blacklisted';
+  brand_safety: 'safe' | 'moderate' | 'unsafe' | null;
+  category_iab: string | null;
+  notes: string | null;
+  tags: string[];
+  adtech: Record<string, boolean>;
+  last_score: number | null;
+  last_score_trend: 'up' | 'down' | 'stable' | null;
+  last_health: string | null;
+  last_ads_txt: number | null;
+  last_ad_count: number | null;
+  last_load_time_ms: number | null;
+  last_trackers: number | null;
+  last_country: string | null;
+  last_lang: string | null;
+  last_tld: string | null;
+  last_audit_id: string | null;
+  last_audit_date: string | null;
+  audit_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteListResponse {
+  sites: SiteEntry[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
+export interface SiteStats {
+  total: number;
+  alive: number;
+  dead: number;
+  redirect: number;
+  error: number;
+  mfa: number;
+  ads_txt_ok: number;
+  avg_score: number;
+  avg_ad_count: number;
+  countries: Array<{ country: string; count: number }>;
+  categories: Array<{ category: string; count: number }>;
+  adtech: Record<string, number>;
+  score_buckets: Array<{ range: string; count: number }>;
+}

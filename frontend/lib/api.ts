@@ -2,7 +2,7 @@
 /* MLI — API client with auth                                         */
 /* ------------------------------------------------------------------ */
 
-import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse, Workspace, WorkspaceDetail, Whitelist, ActivityEntry, DomainEntry, DomainListResponse, CategorizeResult } from './types';
+import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse, Workspace, WorkspaceDetail, Whitelist, ActivityEntry, DomainEntry, DomainListResponse, CategorizeResult, SiteListResponse, SiteStats } from './types';
 
 const API_BASE = '/api';
 
@@ -297,4 +297,41 @@ export async function bulkDomainAction(domainIds: string[], action: string, valu
     body: JSON.stringify({ domain_ids: domainIds, action, value }),
   });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
+}
+
+/* ── Sites Intelligence ── */
+
+export async function getSites(params: {
+  page?: number;
+  per_page?: number;
+  sort?: string;
+  order?: string;
+  search?: string;
+  health?: string;
+  country?: string;
+  ads_txt?: string;
+  score_min?: number;
+  score_max?: number;
+  category?: string;
+} = {}): Promise<SiteListResponse> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  const res = await fetchWithAuth(`${API_BASE}/sites?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch sites: ${res.status}`);
+  return res.json();
+}
+
+export async function getSiteStats(): Promise<SiteStats> {
+  const res = await fetchWithAuth(`${API_BASE}/sites/stats`);
+  if (!res.ok) throw new Error(`Failed to fetch site stats: ${res.status}`);
+  return res.json();
+}
+
+export async function getSiteCountries(): Promise<string[]> {
+  const res = await fetchWithAuth(`${API_BASE}/sites/countries`);
+  if (!res.ok) throw new Error(`Failed to fetch countries: ${res.status}`);
+  const data = await res.json();
+  return data.countries;
 }
