@@ -12,8 +12,13 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Query
 from sse_starlette.sse import EventSourceResponse
+
+from auth import get_current_user
+from db import execute as db_execute, _uuid, _now
+from permissions import check_workspace_role
+import json as json_mod
 
 # ---------------------------------------------------------------------------
 # Heartbeat helper — keeps SSE alive during long blocking operations
@@ -117,7 +122,11 @@ def _save_report(audit_id: str, report: AuditReport, logs: list[str] | None = No
 
 
 @router.post("/api/audit")
-async def run_audit(request: AuditRequest):
+async def run_audit(
+    request: AuditRequest,
+    workspace_id: str = Query(None),
+    user: dict = Depends(get_current_user),
+):
     """
     Run a full audit pipeline and stream progress via SSE.
 
@@ -128,6 +137,12 @@ async def run_audit(request: AuditRequest):
     - event: "complete" data: {"audit_id": "...", "report": {...}}
     - event: "error"    data: {"message": "..."}
     """
+    # Validate workspace access if workspace_id provided
+    if workspace_id:
+        await check_workspace_role(workspace_id, user["id"], ["owner", "editor"])
+
+    _workspace_id = workspace_id
+    _user_id = user["id"]
 
     async def event_generator():
         audit_id = str(uuid4())
@@ -155,11 +170,12 @@ async def run_audit(request: AuditRequest):
             )
             return
 
-        def _log(message: str):
-            """Collect log message with timestamp."""
+        def _log(message: str) -> str:
+            """Collect log message with timestamp. Returns timestamped string."""
             ts = datetime.now().strftime("%H:%M:%S")
-            audit_logs.append(f"[{ts}] {message}")
-            return message
+            stamped = f"[{ts}] {message}"
+            audit_logs.append(stamped)
+            return stamped
 
         def _log_evt(message: str, level: str = "info"):
             """Log + yield helper — returns a dict ready to be yielded."""
@@ -232,20 +248,85 @@ async def run_audit(request: AuditRequest):
             yield _log_evt(f"Fallback: on continue avec les {len(domains)} domaines", "warning")
             alive_domains = domains  # fallback: try all
 
-        # ── Step 2: Attention Score (Playwright) ─────────────
+        # ── Step 2: Playwright (Attention + Screenshots merged) ─────────
         content_langs: dict[str, str] = {}
         metadata_map: dict[str, dict] = {}
         adtech_results: dict[str, dict] = {}
         tracker_results: dict[str, dict] = {}
         load_times: dict[str, int] = {}
+        screenshot_results_from_full: dict[str, dict] | None = None
 
         if not alive_domains:
             yield _log_evt("⚠ Aucun domaine alive — skip attention, ads.txt, geo, screenshots, categorisation", "warning")
 
-        if alive_domains and request.modules.attention:
+        # Use full_audit (single-pass) when both attention and screenshots are enabled
+        use_full_mode = bool(alive_domains) and request.modules.attention and request.modules.screenshots
+        yield _log_evt(f"Modules: attention={request.modules.attention} screenshots={request.modules.screenshots} -> full_mode={use_full_mode}")
+
+        if use_full_mode:
+            yield _log_evt("━━ AUDIT COMPLET (Playwright single-pass) ━━━━")
+            yield _log_evt(f"Score + Screenshots en UNE passe pour {len(alive_domains)} domaines")
+            yield _log_evt(f"Timeout configure: {len(alive_domains) * 45 + 120}s")
+            yield dict(
+                event="step",
+                data=json.dumps({"step": "attention", "status": "start"}),
+            )
+            try:
+                from services.pw_bridge import full_audit_subprocess
+
+                _ensure_dirs()
+                async for evt in _run_with_heartbeat(full_audit_subprocess, alive_domains, str(SCREENSHOTS_DIR)):
+                    if "_result" in evt:
+                        attention_results, content_langs, adtech_results, tracker_results, load_times, screenshot_results_from_full = evt["_result"]
+                    else:
+                        yield evt
+
+                for domain, ar in attention_results.items():
+                    site_audits[domain].attention = AttentionResult(
+                        ad_count=ar.ad_count,
+                        score=ar.score,
+                        is_mfa=ar.is_mfa,
+                        details=ar.details,
+                        error=ar.error,
+                    )
+                    if domain in adtech_results:
+                        site_audits[domain].adtech = adtech_results[domain]
+                    if domain in tracker_results:
+                        site_audits[domain].trackers = tracker_results[domain]
+                    if domain in load_times:
+                        site_audits[domain].load_time_ms = load_times[domain]
+
+                # Screenshots already captured — store them
+                for domain, sr in screenshot_results_from_full.items():
+                    site_audits[domain].screenshots = sr
+
+                n_mfa = sum(1 for ar in attention_results.values() if ar.is_mfa)
+                yield dict(
+                    event="step",
+                    data=json.dumps({
+                        "step": "attention",
+                        "status": "complete",
+                        "result": {"domains_scored": len(attention_results)},
+                    }),
+                )
+                yield dict(
+                    event="step",
+                    data=json.dumps({
+                        "step": "screenshots",
+                        "status": "complete",
+                        "result": {"captured": len(screenshot_results_from_full)},
+                    }),
+                )
+                yield _log_evt(f"Audit Playwright termine: {len(attention_results)} scores, {n_mfa} MFA, {len(screenshot_results_from_full)} screenshots")
+            except Exception as e:
+                yield _log_evt(f"✗ ERREUR audit Playwright: {e}", "error")
+                import traceback as tb
+                yield _log_evt(f"  {tb.format_exc().splitlines()[-1]}", "error")
+
+        elif alive_domains and request.modules.attention:
+            # Attention only (no screenshots)
             yield _log_evt("━━ ATTENTION SCORING (Playwright) ━━━━━━━━━━━━")
             yield _log_evt(f"Lancement Playwright subprocess pour {len(alive_domains)} domaines...")
-            yield _log_evt(f"Timeout configure: {len(alive_domains) * 45 + 120}s")
             yield dict(
                 event="step",
                 data=json.dumps({"step": "attention", "status": "start"}),
@@ -253,14 +334,10 @@ async def run_audit(request: AuditRequest):
             try:
                 from services.pw_bridge import score_all_subprocess
 
-                heartbeat_count = 0
                 async for evt in _run_with_heartbeat(score_all_subprocess, alive_domains):
                     if "_result" in evt:
                         attention_results, content_langs, adtech_results, tracker_results, load_times = evt["_result"]
                     else:
-                        heartbeat_count += 1
-                        if heartbeat_count % 6 == 0:  # Every 30s
-                            yield _log_evt(f"  ... Playwright en cours ({heartbeat_count * 5}s ecoules)")
                         yield evt
 
                 for domain, ar in attention_results.items():
@@ -290,8 +367,6 @@ async def run_audit(request: AuditRequest):
                 yield _log_evt(f"Attention termine: {len(attention_results)} scores, {n_mfa} MFA detectes")
             except Exception as e:
                 yield _log_evt(f"✗ ERREUR attention scoring: {e}", "error")
-                import traceback as tb
-                yield _log_evt(f"  {tb.format_exc().splitlines()[-1]}", "error")
 
         # ── Step 3: ads.txt ──────────────────────────────────
         if alive_domains and request.modules.ads_txt:
@@ -366,12 +441,11 @@ async def run_audit(request: AuditRequest):
             except Exception as e:
                 yield _log_evt(f"✗ ERREUR geo: {e}", "error")
 
-        # ── Step 5: Screenshots ──────────────────────────────
-        if alive_domains and request.modules.screenshots:
+        # ── Step 5: Screenshots (skip if already done by full_audit) ──
+        if alive_domains and request.modules.screenshots and screenshot_results_from_full is None:
+            # Screenshots only (attention was disabled or not run)
             yield _log_evt("━━ SCREENSHOTS (Playwright) ━━━━━━━━━━━━━━━━━")
             yield _log_evt(f"Capture screenshots pour {len(alive_domains)} domaines...")
-            yield _log_evt(f"Dossier: {SCREENSHOTS_DIR}")
-            yield _log_evt(f"Timeout configure: {len(alive_domains) * 45 + 120}s")
             yield dict(
                 event="step",
                 data=json.dumps({"step": "screenshots", "status": "start"}),
@@ -380,17 +454,12 @@ async def run_audit(request: AuditRequest):
                 from services.pw_bridge import screenshot_all_subprocess
 
                 _ensure_dirs()
-                heartbeat_count = 0
                 async for evt in _run_with_heartbeat(screenshot_all_subprocess, alive_domains, str(SCREENSHOTS_DIR)):
                     if "_result" in evt:
                         screenshot_results = evt["_result"]
                     else:
-                        heartbeat_count += 1
-                        if heartbeat_count % 6 == 0:  # Every 30s
-                            yield _log_evt(f"  ... Screenshots en cours ({heartbeat_count * 5}s ecoules)")
                         yield evt
 
-                yield _log_evt(f"Screenshots termines apres ~{heartbeat_count * 5}s")
                 for domain, sr in screenshot_results.items():
                     site_audits[domain].screenshots = sr
 
@@ -406,8 +475,8 @@ async def run_audit(request: AuditRequest):
                 yield _log_evt(f"Screenshots termine: {n_ok}/{len(screenshot_results)} captures reussies")
             except Exception as e:
                 yield _log_evt(f"✗ ERREUR screenshots: {e}", "error")
-                import traceback as tb
-                yield _log_evt(f"  {tb.format_exc().splitlines()[-1]}", "error")
+        elif screenshot_results_from_full is not None:
+            yield _log_evt("Screenshots deja captures dans la passe unique ✓")
 
         # ── Step 6: Categorization (Mistral AI) ─────────────
         if alive_domains and request.modules.categorization:
@@ -490,12 +559,76 @@ async def run_audit(request: AuditRequest):
             action_counts[action] += 1
         yield _log_evt(f"  Actions: {dict(action_counts)}")
 
-        # Save to history
+        # Save to history (JSON file)
         try:
             _save_report(audit_id, report, logs=audit_logs)
             yield _log_evt(f"Rapport sauvegarde: {HISTORY_DIR / f'{audit_id}.json'}")
         except Exception as e:
-            yield _log_evt(f"⚠ Erreur sauvegarde: {e}", "warning")
+            yield _log_evt(f"⚠ Erreur sauvegarde JSON: {e}", "warning")
+
+        # Save to DB (alongside JSON)
+        if _workspace_id:
+            try:
+                stats = {
+                    "total": report.total_sites,
+                    "alive": report.sites_alive,
+                    "dead": report.sites_dead,
+                    "mfa": report.sites_mfa,
+                    "flagged": report.sites_flagged,
+                    "avg_attention_score": report.avg_attention_score,
+                    "category_distribution": report.category_distribution,
+                }
+                results_list = [r.model_dump() for r in report.results]
+                await db_execute(
+                    """INSERT OR REPLACE INTO audits
+                    (id, workspace_id, launched_by, client_label, status, domain_count,
+                     stats_json, results_json, log_json, created_at, completed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        audit_id, _workspace_id, _user_id,
+                        report.client_name or "", "completed", report.total_sites,
+                        json_mod.dumps(stats, default=str),
+                        json_mod.dumps(results_list, default=str),
+                        json_mod.dumps(audit_logs),
+                        report.audit_date, _now(),
+                    ),
+                )
+                yield _log_evt(f"Rapport sauvegarde en DB (workspace {_workspace_id})")
+            except Exception as e:
+                yield _log_evt(f"⚠ Erreur sauvegarde DB: {e}", "warning")
+
+        # Update persistent dead domains registry
+        try:
+            dead_file = HISTORY_DIR.parent / "dead_domains.json"
+            registry: dict = {}
+            if dead_file.exists():
+                registry = json.loads(dead_file.read_text(encoding="utf-8"))
+
+            new_dead = 0
+            for sa in site_audits.values():
+                if not sa.health.is_alive:
+                    d = sa.domain
+                    if d not in registry:
+                        new_dead += 1
+                    registry[d] = {
+                        "last_seen": datetime.now().isoformat(),
+                        "last_audit_id": audit_id,
+                        "status": sa.health.status.value,
+                        "error": sa.health.error_message,
+                        "times_seen_dead": registry.get(d, {}).get("times_seen_dead", 0) + 1,
+                        "first_seen": registry.get(d, {}).get("first_seen", datetime.now().isoformat()),
+                    }
+
+            with open(dead_file, "w", encoding="utf-8") as f:
+                json.dump(registry, f, ensure_ascii=False, indent=2, default=str)
+
+            total_dead = len(registry)
+            if new_dead:
+                yield _log_evt(f"Registre sites morts: +{new_dead} nouveaux, {total_dead} total")
+            else:
+                yield _log_evt(f"Registre sites morts: {total_dead} domaines connus")
+        except Exception as e:
+            yield _log_evt(f"⚠ Erreur registre morts: {e}", "warning")
 
         yield _log_evt(f"━━ AUDIT TERMINE ━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
