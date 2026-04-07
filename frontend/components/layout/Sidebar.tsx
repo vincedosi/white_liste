@@ -2,77 +2,127 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { PlayCircle, Clock, Menu, X } from 'lucide-react';
+import { BarChart3, PlusCircle, List, Activity, Settings, LogOut, Menu, X, ChevronDown, Layers } from 'lucide-react';
 import { useState } from 'react';
+import { useAuth } from '@/components/auth/AuthContext';
 import clsx from 'clsx';
-
-const NAV_ITEMS = [
-  { href: '/', label: 'Nouvel Audit', icon: PlayCircle },
-  { href: '/history', label: 'Historique', icon: Clock },
-] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, workspaces, currentWorkspace, setCurrentWorkspace, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
+
+  const wsId = currentWorkspace?.id;
+
+  const NAV_ITEMS = wsId ? [
+    { href: `/workspaces/${wsId}`, label: 'Dashboard', icon: BarChart3 },
+    { href: `/workspaces/${wsId}/audit/new`, label: 'Nouvel Audit', icon: PlusCircle },
+    { href: `/workspaces/${wsId}/whitelists`, label: 'Whitelists', icon: List },
+    { href: `/workspaces/${wsId}/activity`, label: 'Activite', icon: Activity },
+    { href: `/workspaces/${wsId}/settings`, label: 'Parametres', icon: Settings },
+  ] : [];
+
+  if (loading || !user) return null;
+
+  // Client role: no workspace switcher
+  const isClient = currentWorkspace?.member_role === 'client';
 
   return (
     <>
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between h-14 px-4 bg-sidebar">
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="p-2 text-white/60 hover:text-white transition-colors"
-          aria-label="Menu"
-        >
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 h-16 bg-background/60 backdrop-blur-2xl border-b border-white/[0.03]">
+        <button onClick={() => setMobileOpen(true)} className="text-on-surface-variant hover:text-accent transition-colors">
           <Menu size={20} />
         </button>
-        <span className="font-sans font-extrabold text-sm tracking-tight text-white">
-          ML<span className="text-accent">I</span>
-        </span>
-        <div className="w-9" />
+        <span className="text-lg font-extralight tracking-[0.25em] text-on-surface">ML<span className="text-accent">I</span></span>
+        <div className="w-5" />
       </div>
 
       {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
       )}
 
-      <aside
-        className={clsx(
-          'fixed lg:relative z-50 flex flex-col h-screen w-[220px] bg-sidebar',
-          'transition-transform duration-200 ease-out',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-        )}
-      >
+      <aside className={clsx(
+        'fixed lg:relative z-50 flex flex-col h-screen w-[220px]',
+        'bg-surface-low border-r border-white/[0.03]',
+        'transition-transform duration-200 ease-out',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+      )}>
         {/* Logo */}
-        <div className="flex items-center justify-between px-5 pt-7 pb-6">
-          <div>
-            <div className="flex items-baseline">
-              <span className="font-sans font-extrabold text-xl tracking-tight text-white">
-                ML<span className="text-accent">I</span>
-              </span>
-            </div>
-            <p className="text-[10px] font-mono text-white/30 mt-1 tracking-wider uppercase">
-              Media-List Intelligence
-            </p>
-          </div>
-          <button
-            onClick={() => setMobileOpen(false)}
-            className="lg:hidden p-1 text-white/40 hover:text-white"
-            aria-label="Fermer"
-          >
-            <X size={16} />
-          </button>
+        <div className="px-5 pt-7 pb-4">
+          <Link href="/workspaces" className="block">
+            <span className="text-lg font-extralight tracking-[0.3em] text-on-surface hover:text-accent transition-colors">
+              ML<span className="text-accent">I</span>
+            </span>
+          </Link>
+          <p className="font-label text-[8px] uppercase tracking-[0.2em] text-on-surface-variant/50 font-extralight mt-1">
+            Media-List Intelligence
+          </p>
         </div>
 
-        <div className="mx-5 h-px bg-white/[0.06]" />
+        <div className="mx-5 h-px bg-white/[0.04]" />
+
+        {/* Workspace switcher */}
+        {!isClient && workspaces.length > 0 && (
+          <div className="px-4 py-3 relative">
+            <button
+              onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
+              className={clsx(
+                'w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left',
+                'bg-white/[0.03] border border-white/[0.05]',
+                'hover:border-accent/20 transition-all',
+              )}
+            >
+              <Layers size={13} className="text-accent/60 flex-shrink-0" />
+              <span className="flex-1 text-[11px] font-extralight text-on-surface truncate">
+                {currentWorkspace?.name || 'Select'}
+              </span>
+              <ChevronDown size={12} className={clsx('text-on-surface-variant transition-transform', wsDropdownOpen && 'rotate-180')} />
+            </button>
+
+            {wsDropdownOpen && (
+              <div className="absolute left-4 right-4 top-full mt-1 glass-card rounded-xl overflow-hidden z-50 border border-white/[0.08]">
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    onClick={() => { setCurrentWorkspace(ws); setWsDropdownOpen(false); }}
+                    className={clsx(
+                      'w-full text-left px-3 py-2 text-[11px] font-extralight transition-colors',
+                      ws.id === currentWorkspace?.id
+                        ? 'text-accent bg-white/[0.04]'
+                        : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.03]',
+                    )}
+                  >
+                    {ws.name}
+                  </button>
+                ))}
+                <div className="border-t border-white/[0.04]">
+                  <Link
+                    href="/workspaces"
+                    onClick={() => setWsDropdownOpen(false)}
+                    className="block px-3 py-2 text-[10px] font-label uppercase tracking-[0.15em] text-on-surface-variant/50 hover:text-accent transition-colors font-extralight"
+                  >
+                    Tous les workspaces
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isClient && currentWorkspace && (
+          <div className="px-5 py-3">
+            <span className="text-[11px] font-extralight text-on-surface">{currentWorkspace.name}</span>
+          </div>
+        )}
+
+        <div className="mx-5 h-px bg-white/[0.04]" />
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-5 space-y-0.5">
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV_ITEMS.map((item) => {
-            const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            const isActive = pathname === item.href || (item.href !== `/workspaces/${wsId}` && pathname.startsWith(item.href));
             const Icon = item.icon;
             return (
               <Link
@@ -80,41 +130,39 @@ export function Sidebar() {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium',
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12px] font-extralight tracking-wide',
                   'transition-all duration-150',
                   isActive
-                    ? 'bg-white/[0.08] text-white'
-                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]',
+                    ? 'bg-white/[0.04] text-on-surface border-l-2 border-accent'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.02]',
                 )}
               >
-                <Icon size={16} className={isActive ? 'text-accent' : 'text-white/30'} />
+                <Icon size={15} className={isActive ? 'text-accent' : 'text-on-surface-variant'} />
                 <span>{item.label}</span>
-                {isActive && (
-                  <div className="ml-auto w-1 h-1 rounded-full bg-accent animate-pulse-dot" />
-                )}
               </Link>
             );
           })}
         </nav>
 
-        <div className="mx-5 h-px bg-white/[0.06]" />
+        <div className="mx-5 h-px bg-white/[0.04]" />
 
-        {/* Status */}
-        <div className="px-5 py-4">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
-            <span className="text-[10px] font-mono text-white/30">Operationnel</span>
+        {/* User + logout */}
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <p className="text-[11px] font-extralight text-on-surface truncate">{user.name}</p>
+            <p className="font-label text-[9px] text-on-surface-variant/50 font-extralight truncate">{user.email}</p>
           </div>
-        </div>
-
-        <div className="px-5 pb-5">
-          <p className="text-[9px] font-mono text-white/20 tracking-wider">
-            DENTSU PROGRAMMATIC
-          </p>
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 text-on-surface-variant hover:text-danger transition-colors"
+          >
+            <LogOut size={13} />
+            <span className="font-label text-[9px] uppercase tracking-[0.15em] font-extralight">Deconnexion</span>
+          </button>
         </div>
       </aside>
 
-      <div className="lg:hidden h-14" />
+      <div className="lg:hidden h-16" />
     </>
   );
 }
