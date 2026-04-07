@@ -17,6 +17,7 @@ export interface AuditRequest {
   client: string;
   modules: AuditModules;
   mistral_key?: string;
+  workspace_id?: string;
 }
 
 /** Server-Sent-Event envelope */
