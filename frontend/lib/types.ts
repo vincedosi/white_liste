@@ -183,3 +183,70 @@ export interface AuditResult {
   };
   log?: string[];
 }
+
+/* ---- Auth & Workspace types ------------------------------------- */
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'user';
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  logo_path: string | null;
+  config_json: string;
+  onboarding_done: boolean;
+  created_by: string;
+  created_at: string;
+  member_role?: string;
+  member_count?: number;
+  audit_count?: number;
+}
+
+export interface WorkspaceMember {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  joined_at: string;
+}
+
+export interface WorkspaceDetail extends Workspace {
+  members: WorkspaceMember[];
+}
+
+export interface Whitelist {
+  id: string;
+  workspace_id: string;
+  name: string;
+  domains: string[];
+  domains_json?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActivityEntry {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  user_name: string;
+  user_email?: string;
+  action: string;
+  detail_json: string | null;
+  created_at: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  user: User;
+}
+
+export interface MeResponse {
+  user: User;
+  workspaces: Workspace[];
+}
