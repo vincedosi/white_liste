@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, PlusCircle, List, Activity, Settings, LogOut, Menu, X, ChevronDown, Layers } from 'lucide-react';
+import { BarChart3, PlusCircle, List, Activity, Settings, LogOut, Menu, X, ChevronDown, Layers, Shield } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthContext';
 import clsx from 'clsx';
@@ -143,6 +143,31 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        <div className="mx-5 h-px bg-white/[0.04]" />
+
+        {/* Admin section — only for admin users */}
+        {user.role === 'admin' && (
+          <>
+            <div className="mx-5 h-px bg-white/[0.04]" />
+            <div className="px-3 py-3">
+              <Link
+                href="/admin/domains"
+                onClick={() => setMobileOpen(false)}
+                className={clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[12px] font-extralight tracking-wide',
+                  'transition-all duration-150',
+                  pathname.startsWith('/admin')
+                    ? 'bg-white/[0.04] text-on-surface border-l-2 border-warning'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-white/[0.02]',
+                )}
+              >
+                <Shield size={15} className={pathname.startsWith('/admin') ? 'text-warning' : 'text-on-surface-variant'} />
+                <span>Admin</span>
+              </Link>
+            </div>
+          </>
+        )}
 
         <div className="mx-5 h-px bg-white/[0.04]" />
 
