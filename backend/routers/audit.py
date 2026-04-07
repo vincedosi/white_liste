@@ -567,6 +567,7 @@ async def run_audit(
             yield _log_evt(f"⚠ Erreur sauvegarde JSON: {e}", "warning")
 
         # Save to DB (alongside JSON)
+        results_list = [r.model_dump() for r in report.results]
         if _workspace_id:
             try:
                 stats = {
@@ -578,7 +579,6 @@ async def run_audit(
                     "avg_attention_score": report.avg_attention_score,
                     "category_distribution": report.category_distribution,
                 }
-                results_list = [r.model_dump() for r in report.results]
                 await db_execute(
                     """INSERT OR REPLACE INTO audits
                     (id, workspace_id, launched_by, client_label, status, domain_count,
@@ -596,6 +596,37 @@ async def run_audit(
                 yield _log_evt(f"Rapport sauvegarde en DB (workspace {_workspace_id})")
             except Exception as e:
                 yield _log_evt(f"⚠ Erreur sauvegarde DB: {e}", "warning")
+
+        # Upsert domains into global table
+        from db import upsert_domain as _upsert_domain
+        for _site_result in results_list:
+            try:
+                _domain_name = _site_result.get("domain", "")
+                if not _domain_name:
+                    continue
+                _health = _site_result.get("health", {})
+                _attention = _site_result.get("attention", {})
+                _geo = _site_result.get("geo", {})
+                _ads_txt_data = _site_result.get("ads_txt", {})
+                _adtech_data = _site_result.get("adtech", {})
+                _trackers_data = _site_result.get("trackers", {})
+
+                await _upsert_domain(_domain_name, {
+                    "score": _attention.get("clutter_score") or _attention.get("score"),
+                    "health": _health.get("status", "ok"),
+                    "ads_txt": 1 if _ads_txt_data.get("has_ads_txt") else 0,
+                    "ad_count": _attention.get("ad_count", 0),
+                    "load_time_ms": _site_result.get("load_time_ms"),
+                    "trackers": _trackers_data.get("total", 0) if isinstance(_trackers_data, dict) else 0,
+                    "adtech": _adtech_data if isinstance(_adtech_data, dict) else {},
+                    "country": _geo.get("server_country") if isinstance(_geo, dict) else None,
+                    "lang": _geo.get("content_lang") if isinstance(_geo, dict) else None,
+                    "tld": _geo.get("tld") if isinstance(_geo, dict) else None,
+                    "audit_id": audit_id,
+                    "audit_date": _now(),
+                })
+            except Exception as _upsert_err:
+                print(f"[MLI] upsert_domain error for {_domain_name}: {_upsert_err}")
 
         # Update persistent dead domains registry
         try:
