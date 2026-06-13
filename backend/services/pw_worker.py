@@ -24,7 +24,17 @@ import os
 import sys
 import time as _time
 
+# Make `config` (in backend/) and `detection_helpers` (in backend/services/)
+# importable whether run standalone (`python services/pw_worker.py`) or as a
+# subprocess from the backend cwd.
+_HERE = os.path.dirname(os.path.abspath(__file__))      # .../backend/services
+_BACKEND = os.path.dirname(_HERE)                         # .../backend
+for _p in (_BACKEND, _HERE):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from playwright.sync_api import sync_playwright
+from detection_helpers import dedup_nested_ads, score_from_penalty
 
 # ── Couche 2A : Selectors haute confiance ────────────────
 HIGH_CONFIDENCE_SELECTORS = [
@@ -484,39 +494,80 @@ def force_remove_overlays(page) -> int:
         return 0
 
 
-def dismiss_cookie_banner(page) -> bool:
-    """Tente de fermer le bandeau cookie. Retourne True si un bouton a ete clique."""
-    for selector in CONSENT_SELECTORS:
-        try:
-            btn = page.locator(selector).first
-            if btn.is_visible(timeout=500):
-                btn.click(timeout=2000)
-                return True
-        except Exception:
-            continue
+# JS exécuté DANS chaque frame : trouve et clique le bouton "tout accepter".
+# Cible aussi les CMP rendus en iframe (Sourcepoint `about:srcdoc`, etc.), normalise
+# les apostrophes typographiques (’) et EXCLUT les boutons refuser/paramétrer/s'abonner.
+_FRAME_CONSENT_JS = r"""
+() => {
+  const norm = s => (s||'').replace(/’|ʼ/g, "'").replace(/\s+/g,' ').trim().toLowerCase();
+  const ACCEPT = /(tout accepter|accepter et continuer|accepter & continuer|accepter et fermer|accepter & fermer|accepter tout|oui,? ?j'accepte|j'accepte|^accepter$|accept all|accept cookies|i agree|allow all|^agree$|tout accepter et fermer)/;
+  const REFUSE = /(refus|param|sans accepter|s'abonner|abonner|payer|continuer sans|g[ée]rer|manage|settings|en savoir plus|s'inscrire|personnaliser)/;
+  const KNOWN = ['#didomi-notice-agree-button','#onetrust-accept-btn-handler','#axeptio_btn_acceptAll',
+    "[data-testid='uc-accept-all-button']",'#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '.sp_choice_type_11','.Cmp__action--yes','.cmpboxbtn.cmpboxbtnyes','#tarteaucitronPersonalize2'];
+  for (const k of KNOWN) {
+    const el = document.querySelector(k);
+    if (el) { const r = el.getBoundingClientRect(); if (r.width>0 && r.height>0) { el.click(); return 'known:'+k; } }
+  }
+  const els = document.querySelectorAll('button,[role=button],a,input[type=button],input[type=submit]');
+  for (const el of els) {
+    const txt = norm(el.textContent || el.value);
+    if (!txt || txt.length > 40) continue;
+    if (ACCEPT.test(txt) && !REFUSE.test(txt)) {
+      const r = el.getBoundingClientRect();
+      if (r.width>0 && r.height>0) { el.click(); return 'text:'+txt; }
+    }
+  }
+  return null;
+}
+"""
+
+
+def dismiss_cookie_banner(page, deadline_s: float = 6.0) -> bool:
+    """Clique le bandeau de consentement pour obtenir un VRAI consentement (les régies
+    n'affichent les créas qu'avec un consentement réel). Scanne le frame principal ET les
+    iframes (Sourcepoint/srcdoc), avec polling car le CMP se charge en asynchrone.
+    Retourne True si un bouton a été cliqué."""
+    deadline = _time.monotonic() + deadline_s
+    while _time.monotonic() < deadline:
+        for frame in page.frames:
+            try:
+                if frame.evaluate(_FRAME_CONSENT_JS):
+                    return True
+            except Exception:
+                # frame détachée juste après le clic (CMP qui se ferme) = succès probable
+                continue
+        page.wait_for_timeout(400)
     return False
 
 
 def scroll_full_page(page):
-    """Fast scroll: big steps, short pauses. Triggers lazy-loading."""
-    page.evaluate("""
-        () => {
-            return new Promise((resolve) => {
-                const totalHeight = document.body.scrollHeight;
-                let pos = 0;
-                const step = 1200;
-                const interval = setInterval(() => {
-                    pos += step;
-                    window.scrollTo(0, pos);
-                    if (pos >= totalHeight) {
-                        clearInterval(interval);
-                        window.scrollTo(0, 0);
-                        resolve();
-                    }
-                }, 60);
-            });
-        }
-    """)
+    """Fast scroll: big steps, short pauses. Triggers lazy-loading.
+
+    Driven from Python with a hard step cap so it CANNOT hang: each scrollTo is
+    a synchronous, instant evaluate (no Promise — page.evaluate of a Promise has
+    no timeout and would hang forever if the page's JS loop stalls or its context
+    is destroyed mid-scroll, e.g. an SPA route change). Bounded to 12 steps."""
+    try:
+        height = page.evaluate("() => document.body.scrollHeight") or 0
+    except Exception:
+        height = 0
+    pos = 0
+    steps = 0
+    while pos < height and steps < 12:
+        pos += 1200
+        try:
+            # Options-object form works for native scrollTo AND sites that
+            # override window.scrollTo to expect {top} (e.g. legisocial.fr).
+            page.evaluate("(y) => window.scrollTo({top: y, left: 0})", pos)
+        except Exception:
+            break
+        page.wait_for_timeout(60)
+        steps += 1
+    try:
+        page.evaluate("() => window.scrollTo({top: 0, left: 0})")
+    except Exception:
+        pass
 
 
 def extract_lang(page) -> str:
@@ -596,6 +647,14 @@ def detect_adtech_scripts(page) -> dict:
         return page.evaluate(js)
     except Exception:
         return {"scripts_detected": []}
+
+
+def is_suspect_blocked(net_stats: dict, adtech: dict) -> bool:
+    """True si la page a une infra ad-tech (GPT/Prebid…) MAIS 0 requête pub réseau.
+    Signature d'un chargement bloqué (anti-bot / rate-limit / CMP manqué) : les scripts
+    pub sont là mais aucune enchère n'a tiré → le score « propre » n'est PAS fiable.
+    Le consommateur (ingestion) bascule alors en editorial_status='to_review'."""
+    return net_stats.get("ad_requests", 0) == 0 and bool(adtech.get("scripts_detected"))
 
 
 def detect_trackers(page) -> dict:
@@ -978,10 +1037,13 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
     if dom_ad_count == 0 and net_visual_count == 0 and not adtech.get("scripts_detected"):
         return 10.0, breakdown, "none"
 
-    # DOM penalty (from positioned elements)
+    # DOM penalty (from positioned elements). Footer ads beyond a cap are usually
+    # noise (link/widget/"à lire aussi" blocks matched as ads) -> cap them.
+    FOOTER_CAP = 6
     dom_penalty = 0.0
     has_sticky = False
     has_interstitial = False
+    footer_seen = 0
     for ad in ads:
         y = ad.get("y", 0)
         area = ad.get("area", 0)
@@ -1010,25 +1072,26 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
         elif y < 4000:
             breakdown["deep"] += 1
         else:
+            footer_seen += 1
+            if footer_seen > FOOTER_CAP:
+                continue  # de-noise: ignore footer over-count
             breakdown["footer"] += 1
 
         dom_penalty += penalty
 
-    # Network-based ad count estimate:
-    # Use number of unique ad domains as proxy for ad slots (not raw request count,
-    # which includes pixels, syncs, etc.). Cap at reasonable value.
-    net_ad_domains = len(net_stats.get("ad_domains", []))
-    # Estimate: ~1 visible ad per 2 unique ad domains (conservative)
-    net_estimated_ads = max(net_ad_domains // 2, 1) if net_ad_domains > 0 else 0
-    net_penalty = net_estimated_ads * BASE_PENALTY * 0.7  # lighter weight than DOM
+    # ── Network visual ad requests = the MOST RELIABLE signal ──────────────
+    # Creatives actually loaded from ad domains (image/iframe/media/subdocument).
+    # The DOM selector layer under-counts badly on cross-origin/safeframe ads
+    # (largus.fr: 2 DOM vs 64 visual). So we derive a penalty from net_visual and
+    # take the MAX with the DOM penalty — network is no longer a mere fallback.
+    net_visual_penalty = net_visual_count * 0.25
 
-    # Use DOM as primary if it found ads; fall back to network estimate
-    if dom_ad_count > 0:
+    if net_visual_penalty >= dom_penalty and net_visual_count > 0:
+        detection_method = "network"
+        primary_penalty = net_visual_penalty
+    elif dom_ad_count > 0:
         detection_method = "dom"
         primary_penalty = dom_penalty
-    elif net_estimated_ads > 0:
-        detection_method = "network"
-        primary_penalty = net_penalty
     else:
         detection_method = "none"
         primary_penalty = 0.0
@@ -1041,8 +1104,10 @@ def compute_score_v4(ads: list[dict], adtech: dict, net_stats: dict) -> tuple[fl
     sticky_penalty = STICKY_EXTRA_PENALTY if has_sticky else 0.0
 
     total_penalty = primary_penalty + script_penalty + sticky_penalty
-    score = max(0.0, 10.0 - total_penalty)
-    return round(score, 1), breakdown, detection_method
+    # Saturating curve instead of a hard 10 - penalty cliff: many ads decay the
+    # score smoothly toward 0 rather than slamming every ad-heavy site to 0.
+    score = score_from_penalty(total_penalty)
+    return score, breakdown, detection_method
 
 
 CLUTTER_MEASURE_JS = """
@@ -1317,10 +1382,11 @@ def score_attention(page, domain: str) -> dict:
             clutter_detail = {}
             page_profile = {}
 
-        # ad_count: DOM elements if found, else estimate from unique ad domains
-        net_ad_domain_count = len(net_stats.get("ad_domains", []))
-        net_estimated = max(net_ad_domain_count // 2, 1) if net_ad_domain_count > 0 else 0
-        effective_ad_count = len(ads) if len(ads) > 0 else net_estimated
+        # ad_count: max of DOM elements vs network visual estimate (creatives
+        # loaded). 0 only when NEITHER sees anything -> flagged "à valider".
+        net_visual_ct = net_stats.get("ad_visual_requests", 0)
+        net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
+        effective_ad_count = max(len(ads), net_est_visual)
 
         # Cleanup
         remove_network_listener(page)
@@ -1333,7 +1399,7 @@ def score_attention(page, domain: str) -> dict:
             "is_mfa": clutter_score < 4.0,          # MFA threshold on clutter
             "clutter_detail": clutter_detail,        # NEW: per-zone surface ratios
             "page_profile": page_profile,            # NEW: page composition
-            "details": breakdown,                    # kept for retrocompat
+            "details": {**breakdown, "suspect_blocked": is_suspect_blocked(net_stats, adtech)},  # + garde-fou 0-req/ad-tech
             "ads_above_fold": breakdown["above_fold"],
             "ads_mid_page": breakdown["mid_page"],
             "ads_deep": breakdown["deep"],
@@ -1393,6 +1459,22 @@ def _wait_for_ads(page, max_ms: int = 4000, check_interval: int = 500) -> int:
     return waited
 
 
+def _load_error_result(domain: str, metrics: dict, load_ms: int) -> dict:
+    """Result for a page that never rendered real content (blank SPA / timeout).
+    score=None => exclu des moyennes (models.compute_stats ignore les None)."""
+    return {
+        "ad_count": 0, "interstitials_count": 0, "interstitials": [],
+        "score": None, "clutter_score": None, "attention_score": None,
+        "is_mfa": False, "status": "load_error",
+        "error": f"page non chargee (text={metrics.get('t', 0)}, nodes={metrics.get('n', 0)})",
+        "content_lang": "", "adtech": {"scripts_detected": []},
+        "trackers": {"total": 0}, "page_load_time_ms": load_ms,
+        "clutter_detail": {}, "page_profile": {},
+        "viewport_path": "", "fullpage_path": "",
+        "breakdown": {}, "cookie_dismissed": False,
+    }
+
+
 def full_audit(page, domain: str, output_dir: str) -> dict:
     """Single-pass: scoring + ad highlighting + screenshots + metadata.
     Replaces the old two-pass approach (score_attention + screenshot_with_ads).
@@ -1415,6 +1497,33 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         except Exception as nav_err:
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
             _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms — on continue")
+
+        # 1b. Page-load guard — retry once if blank/SPA shell
+        from detection_helpers import is_content_sufficient
+        from config import CONTENT_MIN_TEXT, CONTENT_MIN_NODES, NAV_RETRY_TIMEOUT_MS
+
+        def _content_metrics():
+            try:
+                return page.evaluate(
+                    "() => ({t: ((document.body && document.body.innerText) || '').length,"
+                    " n: document.querySelectorAll('*').length})")
+            except Exception:
+                return {"t": 0, "n": 0}
+
+        page.wait_for_timeout(600)
+        _m = _content_metrics()
+        if not is_content_sufficient(_m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
+            _log(f"    [guard] Contenu faible (text={_m['t']} nodes={_m['n']}) — retry networkidle...")
+            try:
+                page.goto(url, timeout=NAV_RETRY_TIMEOUT_MS, wait_until="networkidle")
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+            _m = _content_metrics()
+            if not is_content_sufficient(_m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
+                _log(f"    [guard] Page non chargee (text={_m['t']} nodes={_m['n']}) -> load_error")
+                remove_network_listener(page)
+                return _load_error_result(domain, _m, page_load_time_ms)
 
         # 2. CMP — quick check, no fixed 2s wait
         _log(f"    [cmp] Detection CMP...")
@@ -1459,6 +1568,10 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         # 7. DOM detection WITH highlighting (single pass)
         _log(f"    [dom] Detection pubs + highlighting...")
         ads = analyze_ads_multi_layer(page, highlight=True)
+        _n_raw = len(ads)
+        ads = dedup_nested_ads(ads)
+        if len(ads) != _n_raw:
+            _log(f"    [dom] dedup nested: {_n_raw} -> {len(ads)} pubs")
         # Add interstitials as ads with 'interstitial' method
         for it in interstitials:
             ads.append({
@@ -1484,6 +1597,22 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         net_stats = compute_network_stats(intercepted)
         _log(f"    [net] {net_stats.get('ad_requests', 0)} ad reqs, {net_stats.get('ad_visual_requests', 0)} visual")
 
+        # 10b. Video ad detection (passive — no play-click)
+        from detection_helpers import (
+            detect_video_ad_domains, compute_video_ad_units, video_penalty, combine_scores,
+        )
+        from config import (
+            VIDEO_AD_DOMAINS, VIDEO_AD_PATH_HINTS, VIDEO_PLAYER_SELECTOR, VIDEO_PENALTY_PER_UNIT,
+        )
+        try:
+            has_player = bool(page.evaluate("(sel) => !!document.querySelector(sel)", VIDEO_PLAYER_SELECTOR))
+        except Exception:
+            has_player = False
+        video_signals = detect_video_ad_domains(
+            [r.get("url", "") for r in intercepted], VIDEO_AD_DOMAINS, VIDEO_AD_PATH_HINTS)
+        video_units = compute_video_ad_units(has_player, video_signals)
+        _log(f"    [video] player={has_player} signals={video_signals} units={video_units}")
+
         # 11. Score v4
         _log(f"    [score] Calcul score v4...")
         score, breakdown, detection_method = compute_score_v4(ads, adtech, net_stats)
@@ -1500,10 +1629,18 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
             clutter_detail = {}
             page_profile = {}
 
-        # ad_count
-        net_ad_domain_count = len(net_stats.get("ad_domains", []))
-        net_estimated = max(net_ad_domain_count // 2, 1) if net_ad_domain_count > 0 else 0
-        effective_ad_count = len(ads) if len(ads) > 0 else net_estimated
+        # 12b. Final score = most penalizing of clutter vs v4(+video)
+        v4_with_video = max(0.0, round(score - video_penalty(video_units, VIDEO_PENALTY_PER_UNIT), 1))
+        final_score = combine_scores(clutter_score, v4_with_video)
+        if final_score is None:
+            final_score = 10.0  # both None: page loaded but no evidence -> clean
+        _log(f"    [score] final={final_score} (clutter={clutter_score} v4+video={v4_with_video} video_units={video_units})")
+
+        # ad_count: max of DOM elements vs network visual estimate (creatives
+        # loaded). 0 only when NEITHER sees anything -> flagged "à valider".
+        net_visual_ct = net_stats.get("ad_visual_requests", 0)
+        net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
+        effective_ad_count = max(len(ads), net_est_visual)
 
         # 13. MLI banner + screenshots
         page.evaluate("window.scrollTo(0, 0)")
@@ -1534,7 +1671,7 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         }
         """
         page.evaluate(banner_js, {
-            "domain": domain, "score": clutter_score,
+            "domain": domain, "score": final_score,
             "total": effective_ad_count, "atf_pct": atf_pct,
             "interstitials": len(interstitials),
         })
@@ -1542,14 +1679,34 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         os.makedirs(output_dir, exist_ok=True)
         safe_name = domain.replace(".", "_").replace("/", "_")
 
+        # Viewport (above-the-fold) — best-effort, the modal shows this by default.
         _log(f"    [screenshot] Capture viewport...")
         viewport_path = os.path.join(output_dir, f"{safe_name}_viewport.png")
-        page.screenshot(path=viewport_path, full_page=False)
+        try:
+            page.screenshot(path=viewport_path, full_page=False, timeout=30_000)
+        except Exception as e:
+            _log(f"    [screenshot] viewport echec: {str(e)[:80]}")
+            viewport_path = ""
 
-        _log(f"    [screenshot] Capture fullpage...")
+        # Full page — best-effort AND height-gated: Playwright's full_page
+        # screenshot can hang past its timeout on giant/infinite-scroll pages
+        # (e.g. creusot-infos.com). Skip it when the page is pathologically tall.
         fullpage_path = os.path.join(output_dir, f"{safe_name}_full.png")
-        page.screenshot(path=fullpage_path, full_page=True)
-        _log(f"    [screenshot] OK")
+        try:
+            _ph = page.evaluate("() => document.body.scrollHeight") or 0
+        except Exception:
+            _ph = 0
+        if _ph and _ph <= 12000:
+            _log(f"    [screenshot] Capture fullpage ({_ph}px)...")
+            try:
+                page.screenshot(path=fullpage_path, full_page=True, timeout=20_000)
+                _log(f"    [screenshot] OK")
+            except Exception as e:
+                _log(f"    [screenshot] fullpage echec (on garde viewport): {str(e)[:80]}")
+                fullpage_path = ""
+        else:
+            _log(f"    [screenshot] fullpage SKIP (page {_ph}px trop longue)")
+            fullpage_path = ""
 
         remove_network_listener(page)
 
@@ -1558,13 +1715,15 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
             "ad_count": effective_ad_count,
             "interstitials_count": len(interstitials),
             "interstitials": interstitials,
-            "score": clutter_score,
+            "score": final_score,
             "clutter_score": clutter_score,
-            "attention_score": clutter_score,
-            "is_mfa": clutter_score < 4.0,
+            "attention_score": final_score,
+            "is_mfa": final_score < 4.0,
+            "video_units": video_units,
+            "video_signals": video_signals,
             "clutter_detail": clutter_detail,
             "page_profile": page_profile,
-            "details": breakdown,
+            "details": {**breakdown, "suspect_blocked": is_suspect_blocked(net_stats, adtech)},  # + garde-fou 0-req/ad-tech
             "ads_above_fold": breakdown["above_fold"],
             "ads_mid_page": breakdown["mid_page"],
             "ads_deep": breakdown["deep"],
@@ -1689,10 +1848,11 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
             _log(f"    [clutter] ERREUR: {e}")
             clutter_score, clutter_detail, page_profile = score, {}, {}
 
-        # ad_count: DOM elements if found, else estimate from unique ad domains
-        net_ad_domain_count = len(net_stats.get("ad_domains", []))
-        net_estimated = max(net_ad_domain_count // 2, 1) if net_ad_domain_count > 0 else 0
-        effective_ad_count = len(ads) if len(ads) > 0 else net_estimated
+        # ad_count: max of DOM elements vs network visual estimate (creatives
+        # loaded). 0 only when NEITHER sees anything -> flagged "à valider".
+        net_visual_ct = net_stats.get("ad_visual_requests", 0)
+        net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
+        effective_ad_count = max(len(ads), net_est_visual)
 
         # MLI banner — scroll back to top first
         page.evaluate("window.scrollTo(0, 0)")
@@ -1733,11 +1893,11 @@ def screenshot_with_ads(page, domain: str, output_dir: str) -> dict:
 
         _log(f"    [screenshot] Capture viewport...")
         viewport_path = os.path.join(output_dir, f"{safe_name}_viewport.png")
-        page.screenshot(path=viewport_path, full_page=False)
+        page.screenshot(path=viewport_path, full_page=False, timeout=60_000)
 
         _log(f"    [screenshot] Capture fullpage...")
         fullpage_path = os.path.join(output_dir, f"{safe_name}_full.png")
-        page.screenshot(path=fullpage_path, full_page=True)
+        page.screenshot(path=fullpage_path, full_page=True, timeout=60_000)
         _log(f"    [screenshot] OK — {viewport_path}")
 
         remove_network_listener(page)
@@ -1799,6 +1959,33 @@ def _error_result(mode: str, error: str) -> dict:
     return {"title": "", "description": "", "h1": ""}
 
 
+def _new_context(browser):
+    """Crée un contexte navigateur ISOLÉ (un par domaine). Repartir d'un contexte vierge
+    pour chaque site réinitialise cookies/localStorage/état CMP → casse l'accumulation de
+    signaux anti-bot / rate-limit qui, sur un contexte partagé, faisait planter certains
+    domaines en milieu de batch (0 requête pub → faux score « propre »)."""
+    context = browser.new_context(
+        viewport={"width": 1280, "height": 800},
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+    )
+    # Anti-détection : masque navigator.webdriver (signal #1 utilisé par les anti-bots).
+    context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+    )
+    # NB: on N'INJECTE PLUS de faux consentement (CONSENT_INIT_SCRIPT / get_consent_cookies) :
+    # le mock __tcfapi renvoyait `vendor.consents: {}` → masquait le bandeau mais bloquait le
+    # rendu des créas. dismiss_cookie_banner() clique désormais le VRAI CMP → vrai consentement.
+    # Bound navigation / selector waits so a slow site throws instead of hanging.
+    # (Note: page.evaluate of a Promise is NOT governed by this — the scroll JS self-terminates.)
+    context.set_default_timeout(20_000)
+    context.set_default_navigation_timeout(20_000)
+    return context
+
+
 def main():
     raw = sys.stdin.read()
     request = json.loads(raw)
@@ -1806,35 +1993,27 @@ def main():
     domains = request["domains"]
     mode = request.get("mode", "attention")
     output_dir = request.get("output_dir", "./output/screenshots")
+    headless = request.get("headless", True)  # passe à False pour contourner les détections de bot
     total = len(domains)
 
-    _log(f"[pw_worker] START mode={mode} domains={total}")
+    _log(f"[pw_worker] START mode={mode} domains={total} headless={headless}")
 
     results = {}
 
     with sync_playwright() as pw:
-        _log(f"[pw_worker] Lancement navigateur...")
-        browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
+        _log(f"[pw_worker] Lancement navigateur (headless={headless})...")
+        browser = pw.chromium.launch(
+            headless=headless,
+            args=["--disable-blink-features=AutomationControlled"],
         )
-        context.add_init_script(CONSENT_INIT_SCRIPT)
-        _log(f"[pw_worker] Contexte pret")
+        _log(f"[pw_worker] Navigateur pret (contexte frais par domaine)")
 
         for i, domain in enumerate(domains):
             t_start = _time.monotonic()
             _log(f"[{i+1}/{total}] -- {domain} --")
 
-            try:
-                context.add_cookies(get_consent_cookies(domain))
-            except Exception:
-                pass
-
+            # Contexte ISOLÉ par domaine (reset cookies/storage/état → anti rate-limit). cf _new_context.
+            context = _new_context(browser)
             page = context.new_page()
             try:
                 if mode == "full":
@@ -1860,6 +2039,10 @@ def main():
                 results[domain] = _error_result(mode, str(e))
             finally:
                 page.close()
+                try:
+                    context.close()  # libère le contexte isolé du domaine
+                except Exception:
+                    pass
 
         _log(f"[pw_worker] Fermeture navigateur...")
         browser.close()

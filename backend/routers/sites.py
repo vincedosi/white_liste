@@ -4,15 +4,20 @@ All routes require authentication but NOT admin role.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 
 from auth import get_current_user
-from db import fetch_one, fetch_all
+from db import fetch_one, fetch_all, execute, _now
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
+
+# Same dir the worker writes to / history.py serves from.
+SCREENSHOTS_DIR = Path(__file__).parent.parent.parent / "output" / "screenshots"
 
 # Columns allowed as sort targets
 _ALLOWED_SORTS = {
@@ -244,3 +249,77 @@ async def list_countries(user: dict = Depends(get_current_user)):
         (),
     )
     return {"countries": [r["country"] for r in rows]}
+
+
+@router.post("/{domain}/rescan")
+async def rescan_site(domain: str, user: dict = Depends(get_current_user)):
+    """Re-run the Playwright audit (score + screenshot) on a single domain to
+    refresh its capture and score. Runs the worker in a thread to avoid blocking
+    the event loop. Only updates Playwright-derived fields — health/country/
+    ads.txt are preserved (this pass doesn't recompute them)."""
+    row = await fetch_one("SELECT id FROM domains WHERE domain = ?", (domain,))
+    if not row:
+        raise HTTPException(404, "Domain not found")
+
+    SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    from services.pw_bridge import full_audit_subprocess
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            None, full_audit_subprocess, [domain], str(SCREENSHOTS_DIR)
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Rescan failed: {e}")
+
+    attention, content_langs, adtech_results, tracker_results, load_times, _shots = result
+    ar = attention.get(domain)
+    score = ar.score if ar else None
+    ad_count = ar.ad_count if ar else None
+    adtech = adtech_results.get(domain) or {}
+    trackers = tracker_results.get(domain) or {}
+    trackers_total = trackers.get("total", 0) if isinstance(trackers, dict) else 0
+    lang = content_langs.get(domain) or None
+    now = _now()
+
+    # Suspect (score 'propre' non fiable) -> à valider à la main, si :
+    #  - 0 pub détectée (on n'a probablement PAS vu les pubs), OU
+    #  - garde-fou : ad-tech présent mais 0 requête pub réseau (chargement bloqué).
+    suspect_blocked = bool((ar.details or {}).get("suspect_blocked")) if ar else False
+    status = "to_review" if (not ad_count or suspect_blocked) else "pending"
+
+    await execute(
+        """UPDATE domains SET
+            last_score = ?, last_ad_count = ?, last_adtech_json = ?,
+            last_trackers = ?, last_lang = ?, last_audit_date = ?,
+            editorial_status = ?, audit_count = audit_count + 1, updated_at = ?
+           WHERE domain = ?""",
+        (
+            score, ad_count, json.dumps(adtech) if adtech else None,
+            trackers_total, lang, now, status, now, domain,
+        ),
+    )
+    return {"domain": domain, "score": score, "ad_count": ad_count,
+            "editorial_status": status, "rescanned_at": now}
+
+
+@router.post("/{domain}/validate")
+async def validate_site(domain: str, body: dict = Body(...), user: dict = Depends(get_current_user)):
+    """Manually set/confirm a site's score after a human looked at the capture
+    (used for 'to_review' sites where 0 ads were detected)."""
+    row = await fetch_one("SELECT id FROM domains WHERE domain = ?", (domain,))
+    if not row:
+        raise HTTPException(404, "Domain not found")
+    score = body.get("score")
+    if score is None:
+        raise HTTPException(400, "score required")
+    try:
+        score = max(0.0, min(10.0, float(score)))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "score must be a number 0-10")
+    now = _now()
+    await execute(
+        "UPDATE domains SET last_score = ?, editorial_status = 'validated', updated_at = ? WHERE domain = ?",
+        (score, now, domain),
+    )
+    return {"domain": domain, "score": score, "editorial_status": "validated"}

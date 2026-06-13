@@ -619,6 +619,8 @@ async def run_audit(
                     "load_time_ms": _site_result.get("load_time_ms"),
                     "trackers": _trackers_data.get("total", 0) if isinstance(_trackers_data, dict) else 0,
                     "adtech": _adtech_data if isinstance(_adtech_data, dict) else {},
+                    # Garde-fou : ad-tech présent mais 0 requête pub réseau -> 'to_review' (cf. db._editorial_status_after_audit)
+                    "suspect_blocked": (_attention.get("details") or {}).get("suspect_blocked", False),
                     "country": _geo.get("server_country") if isinstance(_geo, dict) else None,
                     "lang": _geo.get("content_lang") if isinstance(_geo, dict) else None,
                     "tld": _geo.get("tld") if isinstance(_geo, dict) else None,

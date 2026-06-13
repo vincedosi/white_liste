@@ -276,13 +276,29 @@ async def migrate_json_audits() -> None:
     print(f"[MLI] Migrated {imported} audits into workspace 'Default'")
 
 
+def _editorial_status_after_audit(prev_status: str | None, suspect_blocked: bool) -> str:
+    """Décide l'editorial_status après un audit.
+    - Ne JAMAIS écraser une validation humaine ('validated').
+    - Garde-fou : si la page a de l'ad-tech mais 0 requête pub réseau (suspect_blocked),
+      le score 'propre' n'est pas fiable -> 'to_review' (cf. is_suspect_blocked dans pw_worker).
+    - Sinon, on conserve le statut précédent (par défaut 'pending')."""
+    if prev_status == "validated":
+        return "validated"
+    if suspect_blocked:
+        return "to_review"
+    return prev_status or "pending"
+
+
 async def upsert_domain(domain_name: str, audit_data: dict) -> None:
     """Insert or update a domain in the global domains table after an audit."""
     import json as json_mod
     db = await get_db()
-    existing = await fetch_one("SELECT id, last_score FROM domains WHERE domain = ?", (domain_name,))
+    existing = await fetch_one(
+        "SELECT id, last_score, editorial_status FROM domains WHERE domain = ?", (domain_name,)
+    )
 
     new_score = audit_data.get("score")
+    suspect_blocked = bool(audit_data.get("suspect_blocked"))
     now = _now()
 
     if existing:
@@ -296,13 +312,16 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
         else:
             trend = "stable"
 
+        editorial_status = _editorial_status_after_audit(
+            existing["editorial_status"], suspect_blocked
+        )
         await db.execute(
             """UPDATE domains SET
                 last_score = ?, last_score_trend = ?, last_health = ?,
                 last_ads_txt = ?, last_ad_count = ?, last_load_time_ms = ?,
                 last_trackers = ?, last_adtech_json = ?,
                 last_country = ?, last_lang = ?, last_tld = ?,
-                last_audit_id = ?, last_audit_date = ?,
+                last_audit_id = ?, last_audit_date = ?, editorial_status = ?,
                 audit_count = audit_count + 1, updated_at = ?
             WHERE id = ?""",
             (
@@ -311,20 +330,21 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
                 audit_data.get("country"), audit_data.get("lang"), audit_data.get("tld"),
-                audit_data.get("audit_id"), audit_data.get("audit_date"),
+                audit_data.get("audit_id"), audit_data.get("audit_date"), editorial_status,
                 now, existing["id"],
             ),
         )
     else:
+        editorial_status = "to_review" if suspect_blocked else "pending"
         await db.execute(
             """INSERT INTO domains
             (id, domain, editorial_status, last_score, last_score_trend, last_health,
              last_ads_txt, last_ad_count, last_load_time_ms, last_trackers, last_adtech_json,
              last_country, last_lang, last_tld, last_audit_id, last_audit_date,
              audit_count, created_at, updated_at)
-            VALUES (?, ?, 'pending', ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
-                _uuid(), domain_name, new_score, audit_data.get("health"),
+                _uuid(), domain_name, editorial_status, new_score, audit_data.get("health"),
                 audit_data.get("ads_txt"), audit_data.get("ad_count"),
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
