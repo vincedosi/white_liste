@@ -534,12 +534,26 @@ def dismiss_cookie_banner(page, deadline_s: float = 6.0) -> bool:
         for frame in page.frames:
             try:
                 if frame.evaluate(_FRAME_CONSENT_JS):
+                    _settle_after_consent(page)
                     return True
             except Exception:
                 # frame détachée juste après le clic (CMP qui se ferme) = succès probable
                 continue
         page.wait_for_timeout(400)
     return False
+
+
+def _settle_after_consent(page):
+    """Certains CMP (ex: voici.fr) RECHARGENT la page après le clic « accepter » pour
+    réappliquer le consentement. La navigation détruit le contexte JS et faisait planter
+    les page.evaluate() suivants (« Execution context was destroyed ») -> audit en erreur,
+    score par défaut 5.0. On laisse la nav éventuelle démarrer puis on attend un DOM stable
+    (no-op si pas de navigation). Borné pour ne jamais pendre."""
+    try:
+        page.wait_for_timeout(500)                                   # laisse un reload éventuel démarrer
+        page.wait_for_load_state("domcontentloaded", timeout=5000)   # attend le nouveau DOM (sinon instantané)
+    except Exception:
+        pass
 
 
 def scroll_full_page(page):
