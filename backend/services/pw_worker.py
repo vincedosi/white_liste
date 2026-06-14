@@ -500,11 +500,12 @@ def force_remove_overlays(page) -> int:
 _FRAME_CONSENT_JS = r"""
 () => {
   const norm = s => (s||'').replace(/’|ʼ/g, "'").replace(/\s+/g,' ').trim().toLowerCase();
-  const ACCEPT = /(tout accepter|accepter et continuer|accepter & continuer|accepter et fermer|accepter & fermer|accepter tout|oui,? ?j'accepte|j'accepte|^accepter$|accept all|accept cookies|i agree|allow all|^agree$|tout accepter et fermer)/;
-  const REFUSE = /(refus|param|sans accepter|s'abonner|abonner|payer|continuer sans|g[ée]rer|manage|settings|en savoir plus|s'inscrire|personnaliser)/;
+  const ACCEPT = /(tout accepter|accepter et continuer|accepter & continuer|accepter et fermer|accepter & fermer|fermer et accepter|fermer & accepter|accepter tout|oui,? ?j'accepte|j'accepte|^accepter$|accept all|accept cookies|i agree|allow all|^agree$|tout accepter et fermer)/;
+  const REFUSE = /(refus|param|sans accepter|s'abonner|abonner|payer|continuer sans|g[ée]rer|manage|settings|en savoir plus|s'inscrire|personnaliser|pr[ée]f[ée]rences)/;
   const KNOWN = ['#didomi-notice-agree-button','#onetrust-accept-btn-handler','#axeptio_btn_acceptAll',
     "[data-testid='uc-accept-all-button']",'#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-    '.sp_choice_type_11','.Cmp__action--yes','.cmpboxbtn.cmpboxbtnyes','#tarteaucitronPersonalize2'];
+    '.sp_choice_type_11','.Cmp__action--yes','.cmpboxbtn.cmpboxbtnyes','#tarteaucitronPersonalize2',
+    '.fast-cmp-button-primary'];
   for (const k of KNOWN) {
     const el = document.querySelector(k);
     if (el) { const r = el.getBoundingClientRect(); if (r.width>0 && r.height>0) { el.click(); return 'known:'+k; } }
