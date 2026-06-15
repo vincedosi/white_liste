@@ -97,6 +97,9 @@ VIDEO_PLAYER_SELECTOR = (
 )
 VIDEO_PENALTY_PER_UNIT = 1.5
 
+# Âge (jours) au-delà duquel un site est "à ré-analyser"
+STALE_DAYS = 14
+
 # ── Garde-fou chargement de page (anti page blanche / SPA) ─
 CONTENT_MIN_TEXT = 200    # caractères de texte visible minimum
 CONTENT_MIN_NODES = 50    # nœuds DOM minimum

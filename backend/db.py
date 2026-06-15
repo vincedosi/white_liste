@@ -150,6 +150,21 @@ async def init_db() -> None:
         );
     """)
     await db.commit()
+    await _ensure_domain_columns()
+
+
+async def _ensure_domain_columns() -> None:
+    """Additive, idempotent column migrations for the domains table."""
+    db = await get_db()
+    cur = await db.execute("PRAGMA table_info(domains)")
+    existing = {r[1] for r in await cur.fetchall()}
+    additions = {
+        "last_ad_surface_pct": "REAL",
+    }
+    for col, decl in additions.items():
+        if col not in existing:
+            await db.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    await db.commit()
 
 
 async def close_db() -> None:
