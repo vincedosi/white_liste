@@ -299,6 +299,9 @@ export async function getSites(params: {
   score_min?: number;
   score_max?: number;
   category?: string;
+  ad_pct_min?: number;
+  ad_pct_max?: number;
+  stale_days?: number;
 } = {}): Promise<SiteListResponse> {
   const qs = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {

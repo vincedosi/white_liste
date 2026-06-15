@@ -314,6 +314,7 @@ export interface SiteEntry {
   adtech: Record<string, boolean>;
   last_score: number | null;
   last_score_trend: 'up' | 'down' | 'stable' | null;
+  last_ad_surface_pct: number | null;
   last_health: string | null;
   last_ads_txt: number | null;
   last_ad_count: number | null;
@@ -347,6 +348,9 @@ export interface SiteStats {
   ads_txt_ok: number;
   avg_score: number;
   avg_ad_count: number;
+  avg_ad_surface_pct: number | null;
+  problematic: number;
+  stale: number;
   countries: Array<{ country: string; count: number }>;
   categories: Array<{ category: string; count: number }>;
   adtech: Record<string, number>;
