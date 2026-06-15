@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`light ${manrope.variable} ${jetbrains.variable}`}>
+    <html lang="fr" suppressHydrationWarning className={`light ${manrope.variable} ${jetbrains.variable}`}>
       <head>
         {/* Applique le thème stocké avant le paint pour éviter le flash de bascule. */}
         <script
