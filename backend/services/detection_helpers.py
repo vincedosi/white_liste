@@ -103,3 +103,25 @@ def combine_scores(clutter_score, v4_score):
     if not vals:
         return None
     return round(min(vals), 1)
+
+
+def is_suspect_false_negative(scripts_detected, network_ad_requests,
+                              dom_ad_count, ad_surface_pct) -> bool:
+    """Vrai si des signaux ad-tech existent (scripts détectés OU requêtes pub
+    réseau) MAIS aucune pub VISIBLE (0 élément DOM encadré et surface ≈ 0 %).
+    C'est le faux-négatif typique du headless (créas non rendues)."""
+    has_adtech = bool(scripts_detected) or (network_ad_requests or 0) > 0
+    no_visible = (dom_ad_count or 0) == 0 and (ad_surface_pct or 0) < 0.5
+    return has_adtech and no_visible
+
+
+def visible_ad_score(result: dict) -> tuple:
+    """Clé de tri d'un résultat de scénario : plus de pubs visibles d'abord,
+    puis plus de surface pub."""
+    details = result.get("details") or {}
+    return (result.get("dom_ad_count", 0) or 0, details.get("ad_surface_pct", 0) or 0)
+
+
+def pick_best(results: list) -> dict:
+    """Retourne le résultat avec le plus de pubs visibles (départage : surface)."""
+    return max(results, key=visible_ad_score)
