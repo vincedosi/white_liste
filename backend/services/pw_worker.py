@@ -37,6 +37,7 @@ from playwright.sync_api import sync_playwright
 from detection_helpers import (
     dedup_nested_ads,
     score_from_penalty,
+    fullpage_capture_plan,
     AD_CONTAINER_TOKENS,
     AD_CONTAINER_SUBSTRINGS,
 )
@@ -1771,24 +1772,30 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
             _log(f"    [screenshot] viewport echec: {str(e)[:80]}")
             viewport_path = ""
 
-        # Full page — best-effort AND height-gated: Playwright's full_page
-        # screenshot can hang past its timeout on giant/infinite-scroll pages
-        # (e.g. creusot-infos.com). Skip it when the page is pathologically tall.
+        # Full page — best-effort. Playwright's full_page peut hang AU-DELA de
+        # son timeout sur les pages géantes/infinies (ex: creusot-infos.com).
+        # On garde full_page natif sous le seuil, et au-dessus on capture une
+        # version BORNEE (resize viewport) au lieu de tout sauter — voir
+        # fullpage_capture_plan. On a donc TOUJOURS une capture.
         fullpage_path = os.path.join(output_dir, f"{safe_name}{shot_suffix}_full.png")
         try:
             _ph = page.evaluate("() => document.body.scrollHeight") or 0
         except Exception:
             _ph = 0
-        if _ph and _ph <= 12000:
-            _log(f"    [screenshot] Capture fullpage ({_ph}px)...")
-            try:
+        _cap_mode, _cap_h = fullpage_capture_plan(_ph)
+        try:
+            if _cap_mode == "full":
+                _log(f"    [screenshot] Capture fullpage ({_ph}px)...")
                 page.screenshot(path=fullpage_path, full_page=True, timeout=20_000)
-                _log(f"    [screenshot] OK")
-            except Exception as e:
-                _log(f"    [screenshot] fullpage echec (on garde viewport): {str(e)[:80]}")
-                fullpage_path = ""
-        else:
-            _log(f"    [screenshot] fullpage SKIP (page {_ph}px trop longue)")
+            else:
+                _log(f"    [screenshot] Page {_ph}px -> capture bornee {_cap_h}px...")
+                page.set_viewport_size({"width": 1280, "height": _cap_h})
+                page.wait_for_timeout(300)
+                page.evaluate("window.scrollTo(0, 0)")
+                page.screenshot(path=fullpage_path, full_page=False, timeout=20_000)
+            _log(f"    [screenshot] OK")
+        except Exception as e:
+            _log(f"    [screenshot] fullpage echec (on garde viewport): {str(e)[:80]}")
             fullpage_path = ""
 
         remove_network_listener(page)

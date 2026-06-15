@@ -192,6 +192,20 @@ def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
     return bool(iab_match or in_ad_container)
 
 
+def fullpage_capture_plan(scroll_height, full_threshold: int = 12000,
+                          max_px: int = 20000) -> tuple:
+    """Plan de capture pleine page. `<= full_threshold` → `("full", h)` :
+    `full_page=True` natif (chemin éprouvé, inchangé pour les sites courants).
+    Sinon → `("bounded", h)` : capture bornée par redimensionnement viewport à
+    `min(hauteur, max_px)`, qui évite le hang de `full_page` sur les pages
+    géantes/infinies tout en gardant une capture (le haut de page contient les
+    zones scorées ATF/MID/DEEP). Hauteur inconnue (0/None) → bornée au max."""
+    h = scroll_height or 0
+    if 0 < h <= full_threshold:
+        return ("full", h)
+    return ("bounded", min(h, max_px) if h else max_px)
+
+
 def is_iab_container_ad(iab_match, has_iframe, has_ad_network_img,
                         has_image, in_ad_container) -> bool:
     """Un conteneur de taille IAB n'est une pub que s'il porte un signal pub
