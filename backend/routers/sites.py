@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
 
 from auth import get_current_user
+from config import STALE_DAYS
 from db import fetch_one, fetch_all, execute, _now
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
@@ -199,7 +200,6 @@ async def sites_stats(user: dict = Depends(get_current_user)):
     )
     problematic = problematic_row["n"] if problematic_row else 0
 
-    from config import STALE_DAYS
     cutoff = (datetime.now(timezone.utc) - timedelta(days=STALE_DAYS)).isoformat()
     stale_row = await fetch_one(
         "SELECT COUNT(*) as n FROM domains WHERE last_audit_date IS NULL OR last_audit_date < ?",
