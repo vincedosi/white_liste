@@ -324,3 +324,24 @@ export async function getSiteCountries(): Promise<string[]> {
   const data = await res.json();
   return data.countries;
 }
+
+/* ── Scan : analyse de la saisie / fichier importé ── */
+
+export interface ScanInputResult {
+  to_scan: string[];
+  duplicates: string[];
+  invalid_count: number;
+  total_found: number;
+}
+
+export async function parseScanInput(text: string, file: File | null): Promise<ScanInputResult> {
+  const fd = new FormData();
+  if (text.trim()) fd.append('text', text);
+  if (file) fd.append('file', file);
+  const res = await fetchWithAuth(`${API_BASE}/sites/parse-input`, { method: 'POST', body: fd });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Échec de l’analyse' }));
+    throw new Error(err.detail || 'Échec de l’analyse');
+  }
+  return res.json();
+}
