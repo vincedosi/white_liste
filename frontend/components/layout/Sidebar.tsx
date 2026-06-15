@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { LogOut, Menu, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthContext';
+import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import clsx from 'clsx';
 
 // UX réduite : un seul onglet pour l'instant. On enrichira la nav plus tard.
@@ -27,7 +28,7 @@ export function Sidebar() {
           <Menu size={20} />
         </button>
         <span className="text-lg font-extralight tracking-[0.25em] text-on-surface">ML<span className="text-accent">I</span></span>
-        <div className="w-5" />
+        <ThemeToggle />
       </div>
 
       {mobileOpen && (
@@ -81,12 +82,13 @@ export function Sidebar() {
 
         <div className="mx-5 h-px bg-white/[0.04]" />
 
-        {/* User + logout */}
+        {/* User + theme + logout */}
         <div className="px-5 py-4 space-y-3">
           <div>
             <p className="text-[11px] font-extralight text-on-surface truncate">{user.name}</p>
             <p className="font-label text-[9px] text-on-surface-variant/50 font-extralight truncate">{user.email}</p>
           </div>
+          <ThemeToggle className="w-full justify-center" />
           <button
             onClick={logout}
             className="flex items-center gap-2 text-on-surface-variant hover:text-danger transition-colors"

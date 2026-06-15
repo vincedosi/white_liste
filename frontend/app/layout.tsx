@@ -24,7 +24,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={`dark ${manrope.variable} ${jetbrains.variable}`}>
+    <html lang="fr" className={`light ${manrope.variable} ${jetbrains.variable}`}>
+      <head>
+        {/* Applique le thème stocké avant le paint pour éviter le flash de bascule. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('mli-theme');if(t!=='light'&&t!=='dark')t='light';var d=document.documentElement;d.classList.remove('light','dark');d.classList.add(t);}catch(e){}})();",
+          }}
+        />
+      </head>
       <body className="bg-background text-on-surface font-sans antialiased">
         <AppShell>{children}</AppShell>
       </body>

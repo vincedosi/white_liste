@@ -8,33 +8,36 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: '#080808',
+        // Tokens sémantiques pilotés par des variables CSS (cf. globals.css).
+        // rgb(var(--x) / <alpha-value>) -> les utilitaires d'opacité Tailwind
+        // (bg-surface-high/40, etc.) continuent de fonctionner.
+        background: 'rgb(var(--c-background) / <alpha-value>)',
         surface: {
-          DEFAULT: '#080808',
-          dim: '#080808',
-          low: '#0d0d0d',
-          container: '#121212',
-          high: '#181818',
-          highest: '#1c1c1c',
-          bright: '#1a1a1a',
+          DEFAULT: 'rgb(var(--c-surface) / <alpha-value>)',
+          dim: 'rgb(var(--c-surface-dim) / <alpha-value>)',
+          low: 'rgb(var(--c-surface-low) / <alpha-value>)',
+          container: 'rgb(var(--c-surface-container) / <alpha-value>)',
+          high: 'rgb(var(--c-surface-high) / <alpha-value>)',
+          highest: 'rgb(var(--c-surface-highest) / <alpha-value>)',
+          bright: 'rgb(var(--c-surface-bright) / <alpha-value>)',
         },
         primary: {
-          DEFAULT: '#339dff',
-          electric: '#0066ff',
+          DEFAULT: 'rgb(var(--c-primary) / <alpha-value>)',
+          electric: 'rgb(var(--c-primary-electric) / <alpha-value>)',
         },
-        accent: '#00e5ff',
-        secondary: '#00fc40',
-        'on-surface': '#ffffff',
-        'on-surface-variant': '#909090',
-        muted: '#909090',
-        dim: '#606060',
+        accent: 'rgb(var(--c-accent) / <alpha-value>)',
+        secondary: 'rgb(var(--c-secondary) / <alpha-value>)',
+        'on-surface': 'rgb(var(--c-on-surface) / <alpha-value>)',
+        'on-surface-variant': 'rgb(var(--c-on-surface-variant) / <alpha-value>)',
+        muted: 'rgb(var(--c-muted) / <alpha-value>)',
+        dim: 'rgb(var(--c-dim) / <alpha-value>)',
         outline: {
-          DEFAULT: '#404040',
-          variant: '#2a2a2a',
+          DEFAULT: 'rgb(var(--c-outline) / <alpha-value>)',
+          variant: 'rgb(var(--c-outline-variant) / <alpha-value>)',
         },
-        danger: '#ff716c',
-        warning: '#F59E0B',
-        success: '#00fc40',
+        danger: 'rgb(var(--c-danger) / <alpha-value>)',
+        warning: 'rgb(var(--c-warning) / <alpha-value>)',
+        success: 'rgb(var(--c-success) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'Manrope', 'sans-serif'],

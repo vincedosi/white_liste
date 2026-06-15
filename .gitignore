@@ -7,4 +7,10 @@ output/history/
 .claude/
 frontend/.next/
 frontend/node_modules/
+frontend/.next-dev.log
+frontend/tsconfig.tsbuildinfo
 backend/data/mli.db
+backend/data/mli.db-shm
+backend/data/mli.db-wal
+backend/data/test_sites_v1.db
+backend/backend-dev.log
