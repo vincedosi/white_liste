@@ -31,6 +31,7 @@ _ALLOWED_SORTS = {
     "category_iab",
     "audit_count",
     "last_audit_date",
+    "last_ad_surface_pct",
 }
 
 # Ad-tech keys tracked for the stats endpoint
@@ -66,6 +67,9 @@ async def list_sites(
     score_min: float | None = Query(None),
     score_max: float | None = Query(None),
     category: str = Query(""),
+    ad_pct_min: float | None = Query(None),
+    ad_pct_max: float | None = Query(None),
+    stale_days: int | None = Query(None),
     user: dict = Depends(get_current_user),
 ):
     sort_col = sort if sort in _ALLOWED_SORTS else "domain"
@@ -95,6 +99,17 @@ async def list_sites(
     if category:
         conditions.append("category_iab = ?")
         params.append(category)
+    if ad_pct_min is not None:
+        conditions.append("last_ad_surface_pct >= ?")
+        params.append(ad_pct_min)
+    if ad_pct_max is not None:
+        conditions.append("last_ad_surface_pct <= ?")
+        params.append(ad_pct_max)
+    if stale_days is not None:
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
+        conditions.append("(last_audit_date IS NULL OR last_audit_date < ?)")
+        params.append(cutoff)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

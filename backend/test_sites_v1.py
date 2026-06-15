@@ -73,7 +73,43 @@ async def test_backfill_sets_pct_when_present():
     print("OK test_backfill_sets_pct_when_present")
 
 
+async def test_list_filters_pct_and_stale():
+    from db import close_db
+    await close_db()
+    if db_mod.DB_PATH.exists():
+        db_mod.DB_PATH.unlink()
+    db_mod._db = None
+    await init_db()
+    from db import upsert_domain, get_db, close_db
+    from routers.sites import list_sites
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await upsert_domain("calme.fr", {"score": 9.0, "ad_surface_pct": 10.0, "audit_id": "x"})
+    await upsert_domain("probleme.fr", {"score": 2.0, "ad_surface_pct": 70.0, "audit_id": "x"})
+    # rendre "calme.fr" périmé, "probleme.fr" récent
+    dbc = await get_db()
+    await dbc.execute("UPDATE domains SET last_audit_date = '2000-01-01T00:00:00' WHERE domain='calme.fr'")
+    await dbc.execute("UPDATE domains SET last_audit_date = ? WHERE domain='probleme.fr'", (now_iso,))
+    await dbc.commit()
+
+    _defaults = dict(page=1, per_page=100, sort="domain", order="asc",
+                     search="", health="", country="", ads_txt="",
+                     score_min=None, score_max=None, category="",
+                     ad_pct_min=None, ad_pct_max=None, stale_days=None)
+
+    res = await list_sites(**{**_defaults, "ad_pct_min": 50.0, "user": {"id": "u"}})
+    names = {s["domain"] for s in res["sites"]}
+    assert names == {"probleme.fr"}, names
+
+    res2 = await list_sites(**{**_defaults, "stale_days": 14, "user": {"id": "u"}})
+    names2 = {s["domain"] for s in res2["sites"]}
+    assert "calme.fr" in names2 and "probleme.fr" not in names2, names2
+    await close_db()
+    print("OK test_list_filters_pct_and_stale")
+
+
 if __name__ == "__main__":
     asyncio.run(test_column_added())
     asyncio.run(test_upsert_writes_ad_surface_pct())
     asyncio.run(test_backfill_sets_pct_when_present())
+    asyncio.run(test_list_filters_pct_and_stale())
