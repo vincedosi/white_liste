@@ -915,20 +915,23 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
             if (w < 100 || h < 40) return;
             if (!matchesIAB(w, h)) return;
 
-            // Must contain an iframe or an external image
-            const hasIframe = el.querySelector('iframe');
-            let hasExternalImg = false;
-            el.querySelectorAll('img[src]').forEach(img => {{
+            // Signal pub corroborant requis (mirror is_iab_container_ad) : une
+            // simple image externe (CDN first-party, ex. vignettes) ne suffit
+            // PLUS — il faut une iframe, une image servie par une régie, ou un
+            // conteneur classé ad contenant une créa.
+            const hasIframe = !!el.querySelector('iframe');
+            const imgs = el.querySelectorAll('img[src]');
+            const hasImage = imgs.length > 0;
+            let hasAdNetworkImg = false;
+            imgs.forEach(img => {{
                 try {{
-                    const imgUrl = new URL(img.src, window.location.href);
-                    const imgHost = imgUrl.hostname.replace(/^www\\./, '');
-                    if (imgHost !== siteDomain && !imgHost.endsWith('.' + siteDomain)) {{
-                        hasExternalImg = true;
-                    }}
+                    const imgHost = new URL(img.src, window.location.href).hostname.replace(/^www\\./, '');
+                    if (isAdDomain(imgHost)) hasAdNetworkImg = true;
                 }} catch(e) {{}}
             }});
+            const inAdC = inAdContainer(el);
 
-            if (hasIframe || hasExternalImg) {{
+            if (hasIframe || hasAdNetworkImg || (inAdC && hasImage)) {{
                 addAd(el, 'behavior_iab_container');
             }}
         }});

@@ -12,6 +12,7 @@ from detection_helpers import (
     iab_size_match,
     is_ad_container_signature,
     is_friendly_iframe_ad,
+    is_iab_container_ad,
     IAB_SIZES,
 )
 
@@ -72,8 +73,28 @@ def test_is_friendly_iframe_ad():
     print("OK test_is_friendly_iframe_ad")
 
 
+def test_is_iab_container_ad():
+    # iframe dans une boîte IAB -> pub
+    assert is_iab_container_ad(True, True, False, False, False) is True
+    # image servie par une régie -> pub
+    assert is_iab_container_ad(True, False, True, True, False) is True
+    # image dans un conteneur classé ad -> pub
+    assert is_iab_container_ad(True, False, False, True, True) is True
+    # FAUX POSITIF wikipedia : image externe (CDN first-party), pas de régie,
+    # pas de conteneur ad -> PLUS détecté
+    assert is_iab_container_ad(True, False, False, True, False) is False
+    # conteneur ad mais sans aucune créa (image) -> non (laissé au layer 1E)
+    assert is_iab_container_ad(True, False, False, False, True) is False
+    # pas de taille IAB -> jamais pub, même avec iframe
+    assert is_iab_container_ad(False, True, True, True, True) is False
+    # rien -> non
+    assert is_iab_container_ad(True, False, False, False, False) is False
+    print("OK test_is_iab_container_ad")
+
+
 if __name__ == "__main__":
     test_iab_size_match()
     test_is_ad_container_signature()
     test_is_friendly_iframe_ad()
+    test_is_iab_container_ad()
     print("ALL OK (detection classify)")

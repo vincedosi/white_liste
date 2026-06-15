@@ -190,3 +190,18 @@ def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
     if (width or 0) < min_w or (height or 0) < min_h:
         return False
     return bool(iab_match or in_ad_container)
+
+
+def is_iab_container_ad(iab_match, has_iframe, has_ad_network_img,
+                        has_image, in_ad_container) -> bool:
+    """Un conteneur de taille IAB n'est une pub que s'il porte un signal pub
+    CORROBORANT : il contient une iframe, une image servie par une régie, ou
+    il est dans un conteneur classé ad ET contient une créa (image). Une simple
+    image externe (CDN first-party, ex. vignettes Wikipédia) ne suffit PLUS."""
+    if not iab_match:
+        return False
+    if has_iframe or has_ad_network_img:
+        return True
+    if in_ad_container and has_image:
+        return True
+    return False
