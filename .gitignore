@@ -13,4 +13,6 @@ backend/data/mli.db
 backend/data/mli.db-shm
 backend/data/mli.db-wal
 backend/data/test_sites_v1.db
+backend/data/*.bak-before-wipe
 backend/backend-dev.log
+backend/backend-dev.err.log
