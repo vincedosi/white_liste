@@ -556,7 +556,7 @@ def _settle_after_consent(page):
         pass
 
 
-def scroll_full_page(page):
+def scroll_full_page(page, slow: bool = False):
     """Fast scroll: big steps, short pauses. Triggers lazy-loading.
 
     Driven from Python with a hard step cap so it CANNOT hang: each scrollTo is
@@ -567,17 +567,20 @@ def scroll_full_page(page):
         height = page.evaluate("() => document.body.scrollHeight") or 0
     except Exception:
         height = 0
+    step_px = 600 if slow else 1200
+    pause_ms = 300 if slow else 60
+    max_steps = 20 if slow else 12
     pos = 0
     steps = 0
-    while pos < height and steps < 12:
-        pos += 1200
+    while pos < height and steps < max_steps:
+        pos += step_px
         try:
             # Options-object form works for native scrollTo AND sites that
             # override window.scrollTo to expect {top} (e.g. legisocial.fr).
             page.evaluate("(y) => window.scrollTo({top: y, left: 0})", pos)
         except Exception:
             break
-        page.wait_for_timeout(60)
+        page.wait_for_timeout(pause_ms)
         steps += 1
     try:
         page.evaluate("() => window.scrollTo({top: 0, left: 0})")
@@ -1490,12 +1493,16 @@ def _load_error_result(domain: str, metrics: dict, load_ms: int) -> dict:
     }
 
 
-def full_audit(page, domain: str, output_dir: str) -> dict:
+def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None) -> dict:
     """Single-pass: scoring + ad highlighting + screenshots + metadata.
     Replaces the old two-pass approach (score_attention + screenshot_with_ads).
     Uses adaptive waits instead of fixed delays.
     """
     url = f"https://{domain}"
+    sc = scenario or {}
+    ad_wait_ms = sc.get("ad_wait_ms", 3000)
+    slow_scroll = bool(sc.get("slow_scroll"))
+    scenario_name = sc.get("name", "base")
     intercepted = []
     try:
         # 0. Network listener
@@ -1562,18 +1569,18 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
 
         # 3. Wait for ads — adaptive: stop early if ad iframes appear
         _log(f"    [ads] Attente adaptative post-consent (max 3s)...")
-        ad_wait = _wait_for_ads(page, max_ms=3000, check_interval=500)
+        ad_wait = _wait_for_ads(page, max_ms=ad_wait_ms, check_interval=500)
         _log(f"    [ads] Ads detectes apres {ad_wait}ms")
 
         # 4. Scroll
         _log(f"    [scroll] Scroll complet...")
-        scroll_full_page(page)
+        scroll_full_page(page, slow=slow_scroll)
         page.wait_for_timeout(1000)
         page.evaluate("window.scrollTo(0, 0)")
 
         # 5. Prebid/GPT — adaptive wait
         _log(f"    [ads] Attente auctions (max 3s)...")
-        auction_wait = _wait_for_ads(page, max_ms=3000, check_interval=500)
+        auction_wait = _wait_for_ads(page, max_ms=ad_wait_ms, check_interval=500)
         _log(f"    [ads] Auctions apres {auction_wait}ms")
 
         # 6. Language
@@ -1693,10 +1700,11 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
 
         os.makedirs(output_dir, exist_ok=True)
         safe_name = domain.replace(".", "_").replace("/", "_")
+        shot_suffix = "" if scenario_name == "base" else f"__{scenario_name}"
 
         # Viewport (above-the-fold) — best-effort, the modal shows this by default.
         _log(f"    [screenshot] Capture viewport...")
-        viewport_path = os.path.join(output_dir, f"{safe_name}_viewport.png")
+        viewport_path = os.path.join(output_dir, f"{safe_name}{shot_suffix}_viewport.png")
         try:
             page.screenshot(path=viewport_path, full_page=False, timeout=30_000)
         except Exception as e:
@@ -1706,7 +1714,7 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
         # Full page — best-effort AND height-gated: Playwright's full_page
         # screenshot can hang past its timeout on giant/infinite-scroll pages
         # (e.g. creusot-infos.com). Skip it when the page is pathologically tall.
-        fullpage_path = os.path.join(output_dir, f"{safe_name}_full.png")
+        fullpage_path = os.path.join(output_dir, f"{safe_name}{shot_suffix}_full.png")
         try:
             _ph = page.evaluate("() => document.body.scrollHeight") or 0
         except Exception:
@@ -1758,6 +1766,7 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
             # Screenshot fields
             "viewport_path": viewport_path,
             "fullpage_path": fullpage_path,
+            "scenario_used": scenario_name,
             "error": None,
         }
     except Exception as e:
@@ -1776,6 +1785,7 @@ def full_audit(page, domain: str, output_dir: str) -> dict:
             "dom_ad_count": 0, "network_ad_requests": 0,
             "network_ad_domains": [], "network_tracker_requests": 0,
             "viewport_path": "", "fullpage_path": "",
+            "scenario_used": (scenario or {}).get("name", "base"),
             "error": str(e)[:200],
         }
 
@@ -1974,36 +1984,76 @@ def _error_result(mode: str, error: str) -> dict:
     return {"title": "", "description": "", "h1": ""}
 
 
-def _new_context(browser):
-    """Crée un contexte navigateur ISOLÉ (un par domaine). Repartir d'un contexte vierge
-    pour chaque site réinitialise cookies/localStorage/état CMP → casse l'accumulation de
-    signaux anti-bot / rate-limit qui, sur un contexte partagé, faisait planter certains
-    domaines en milieu de batch (0 requête pub → faux score « propre »)."""
-    context = browser.new_context(
-        viewport={"width": 1280, "height": 800},
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
+def _new_context(browser, scenario: dict | None = None):
+    """Crée un contexte navigateur ISOLÉ (un par domaine). `scenario` optionnel
+    applique locale / timezone / Accept-Language / UA pour les passes de retry.
+    Sans `scenario` → comportement de base inchangé."""
+    sc = scenario or {}
+    ua = sc.get("user_agent") or (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
     )
-    # Anti-détection : masque navigator.webdriver (signal #1 utilisé par les anti-bots).
+    ctx_kwargs = {"viewport": {"width": 1280, "height": 800}, "user_agent": ua}
+    if sc.get("locale"):
+        ctx_kwargs["locale"] = sc["locale"]
+    if sc.get("timezone_id"):
+        ctx_kwargs["timezone_id"] = sc["timezone_id"]
+    if sc.get("accept_language"):
+        ctx_kwargs["extra_http_headers"] = {"Accept-Language": sc["accept_language"]}
+    context = browser.new_context(**ctx_kwargs)
+    # Anti-détection : masque navigator.webdriver (signal #1 des anti-bots).
     context.add_init_script(
         "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
     )
-    # NB: on N'INJECTE PLUS de faux consentement (CONSENT_INIT_SCRIPT / get_consent_cookies) :
-    # le mock __tcfapi renvoyait `vendor.consents: {}` → masquait le bandeau mais bloquait le
-    # rendu des créas. dismiss_cookie_banner() clique désormais le VRAI CMP → vrai consentement.
-    # Bound navigation / selector waits so a slow site throws instead of hanging.
-    # (Note: page.evaluate of a Promise is NOT governed by this — the scroll JS self-terminates.)
     context.set_default_timeout(20_000)
     context.set_default_navigation_timeout(20_000)
     return context
 
 
+SCENARIO_FR_PATIENT = {
+    "name": "fr_patient",
+    "locale": "fr-FR",
+    "timezone_id": "Europe/Paris",
+    "accept_language": "fr-FR,fr;q=0.9",
+    "slow_scroll": True,
+    "ad_wait_ms": 6000,
+}
+# Mêmes réglages contexte/page ; la différence = navigateur lancé headless=False.
+SCENARIO_HEADFUL = {**SCENARIO_FR_PATIENT, "name": "headful"}
+
+
+def _promote_screenshots(best: dict, domain: str, output_dir: str) -> None:
+    """Promeut les captures du scénario gagnant vers le nom canonique
+    `{safe}_viewport.png` / `{safe}_full.png`, puis supprime les fichiers
+    suffixés des scénarios. Met à jour les chemins du dict `best`."""
+    import shutil
+    import glob as _glob
+
+    safe = domain.replace(".", "_").replace("/", "_")
+    name = best.get("scenario_used", "base")
+    if name != "base":
+        for suffix, key in (("_viewport.png", "viewport_path"), ("_full.png", "fullpage_path")):
+            src = os.path.join(output_dir, f"{safe}__{name}{suffix}")
+            dst = os.path.join(output_dir, f"{safe}{suffix}")
+            if os.path.exists(src):
+                try:
+                    shutil.copyfile(src, dst)
+                    best[key] = dst
+                except OSError:
+                    pass
+    # Nettoyage de tous les fichiers suffixés (`{safe}__<scenario>...`).
+    for f in _glob.glob(os.path.join(output_dir, f"{safe}__*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+
 def main():
     raw = sys.stdin.read()
     request = json.loads(raw)
+    from detection_helpers import is_suspect_false_negative, pick_best
 
     domains = request["domains"]
     mode = request.get("mode", "attention")
@@ -2021,6 +2071,7 @@ def main():
             headless=headless,
             args=["--disable-blink-features=AutomationControlled"],
         )
+        headful_browser = None  # lancé paresseusement au 1er site suspect
         _log(f"[pw_worker] Navigateur pret (contexte frais par domaine)")
 
         for i, domain in enumerate(domains):
@@ -2032,7 +2083,48 @@ def main():
             page = context.new_page()
             try:
                 if mode == "full":
-                    results[domain] = full_audit(page, domain, output_dir)
+                    base = full_audit(page, domain, output_dir)
+                    base["retry_count"] = 0
+                    # .get() défensif : _load_error_result n'a pas toutes les clés.
+                    suspect = is_suspect_false_negative(
+                        (base.get("adtech") or {}).get("scripts_detected"),
+                        (base.get("network_stats") or {}).get("ad_requests"),
+                        base.get("dom_ad_count"),
+                        (base.get("details") or {}).get("ad_surface_pct"),
+                    )
+                    if suspect:
+                        _log(f"    [retry] Suspect faux-négatif (adtech présent, 0 pub visible) — escalade")
+                        candidates = [base]
+                        # S1 — FR patient, même navigateur headless
+                        try:
+                            c1 = _new_context(browser, SCENARIO_FR_PATIENT)
+                            p1 = c1.new_page()
+                            candidates.append(full_audit(p1, domain, output_dir, SCENARIO_FR_PATIENT))
+                            c1.close()
+                        except Exception as e:
+                            _log(f"    [retry] S1 (fr_patient) echec: {str(e)[:80]}")
+                        # S2 — headful (navigateur visible lancé une seule fois)
+                        try:
+                            if headful_browser is None:
+                                _log(f"    [retry] Lancement navigateur visible (headful)...")
+                                headful_browser = pw.chromium.launch(
+                                    headless=False,
+                                    args=["--disable-blink-features=AutomationControlled"],
+                                )
+                            c2 = _new_context(headful_browser, SCENARIO_HEADFUL)
+                            p2 = c2.new_page()
+                            candidates.append(full_audit(p2, domain, output_dir, SCENARIO_HEADFUL))
+                            c2.close()
+                        except Exception as e:
+                            _log(f"    [retry] S2 (headful) echec: {str(e)[:80]}")
+                        counts = " | ".join(f"{c.get('scenario_used')}:{c.get('dom_ad_count')}" for c in candidates)
+                        best = pick_best(candidates)
+                        best["retry_count"] = len(candidates) - 1
+                        _promote_screenshots(best, domain, output_dir)
+                        _log(f"    [retry] {counts} -> gagnant: {best.get('scenario_used')} ({best.get('dom_ad_count')} pubs visibles)")
+                        results[domain] = best
+                    else:
+                        results[domain] = base
                 elif mode == "attention":
                     results[domain] = score_attention(page, domain)
                 elif mode == "screenshot":
@@ -2058,6 +2150,12 @@ def main():
                     context.close()  # libère le contexte isolé du domaine
                 except Exception:
                     pass
+
+        if headful_browser is not None:
+            try:
+                headful_browser.close()
+            except Exception:
+                pass
 
         _log(f"[pw_worker] Fermeture navigateur...")
         browser.close()
