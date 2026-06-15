@@ -34,7 +34,12 @@ for _p in (_BACKEND, _HERE):
         sys.path.insert(0, _p)
 
 from playwright.sync_api import sync_playwright
-from detection_helpers import dedup_nested_ads, score_from_penalty
+from detection_helpers import (
+    dedup_nested_ads,
+    score_from_penalty,
+    AD_CONTAINER_TOKENS,
+    AD_CONTAINER_SUBSTRINGS,
+)
 
 # ── Couche 2A : Selectors haute confiance ────────────────
 HIGH_CONFIDENCE_SELECTORS = [
@@ -719,6 +724,8 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
     """
     iab_json = json.dumps(IAB_SIZES)
     ad_domains_json = json.dumps(AD_NETWORK_DOMAINS)
+    ad_tokens_json = json.dumps(list(AD_CONTAINER_TOKENS))
+    ad_substrings_json = json.dumps(list(AD_CONTAINER_SUBSTRINGS))
 
     js = f"""
     (args) => {{
@@ -730,14 +737,37 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
 
         const adDomains = {ad_domains_json};
         const iabSizes = {iab_json};
+        const adTokens = {ad_tokens_json};
+        const adSubstrings = {ad_substrings_json};
         const tolerance = 20;
+
+        // Mirror Python is_ad_container_signature : tokenise sur non-alphanum.
+        function isAdContainerSig(sig) {{
+            if (!sig) return false;
+            const tokens = sig.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+            for (const tok of tokens) {{
+                if (adTokens.includes(tok)) return true;
+                if (adSubstrings.some(s => tok.includes(s))) return true;
+            }}
+            return false;
+        }}
+        // Vrai si l'élément ou un ancêtre est un conteneur pub (id/class).
+        function inAdContainer(el) {{
+            let node = el;
+            for (let i = 0; node && i < 6; i++) {{
+                const sig = (node.id || '') + ' ' + (typeof node.className === 'string' ? node.className : '');
+                if (isAdContainerSig(sig)) return true;
+                node = node.parentElement;
+            }}
+            return false;
+        }}
 
         // Inject highlight styles once if highlighting
         if (doHighlight) {{
             const style = document.createElement('style');
             style.textContent = `
                 .mli-ad-highlight {{
-                    outline: 3px solid #ef4444 !important;
+                    outline: 3px solid #E5009A !important;
                     outline-offset: 2px !important;
                     position: relative !important;
                 }}
@@ -745,7 +775,7 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                     position: absolute !important;
                     top: -2px !important;
                     right: -2px !important;
-                    background: #ef4444 !important;
+                    background: #E5009A !important;
                     color: white !important;
                     font-size: 9px !important;
                     font-weight: bold !important;
@@ -827,7 +857,18 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
         document.querySelectorAll('iframe').forEach(iframe => {{
             if (seen.has(iframe)) return;
             const src = iframe.src || iframe.getAttribute('src') || '';
-            if (!src || src === 'about:blank' || src.startsWith('javascript:')) return;
+
+            // Friendly iframes (src vide/about:blank/javascript:) : la créa est
+            // injectée par JS (rendu standard Prebid/SafeFrame/actirise). On ne
+            // les jette PLUS : si taille IAB OU dans un conteneur ad -> pub.
+            if (!src || src === 'about:blank' || src.startsWith('javascript:')) {{
+                const fr = iframe.getBoundingClientRect();
+                const fw = Math.round(fr.width), fh = Math.round(fr.height);
+                if (fw >= 100 && fh >= 30 && (matchesIAB(fw, fh) || inAdContainer(iframe))) {{
+                    addAd(iframe, 'behavior_friendly_iframe');
+                }}
+                return;
+            }}
 
             let isCrossOrigin = false;
             let isAdNetwork = false;
@@ -938,6 +979,22 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                 const container = link.closest('div, section, aside, figure') || link;
                 addAd(container, 'behavior_sponsored_block');
             }} catch(e) {{}}
+        }});
+
+        // 1E. Conteneurs pub identifiés par classe/id (actirise, ads, gpt…)
+        // dont la créa n'est PAS une iframe (AdSense <ins>, blocs natifs). Borné
+        // en taille pour ne pas encadrer un wrapper pleine page.
+        document.querySelectorAll('div, ins, aside, section').forEach(el => {{
+            if (seen.has(el)) return;
+            const sig = (el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '');
+            if (!isAdContainerSig(sig)) return;
+            const rect = el.getBoundingClientRect();
+            const w = Math.round(rect.width), h = Math.round(rect.height);
+            if (w < 100 || h < 30 || h > 1200) return;
+            // Doit contenir une créa (iframe/img) ou avoir une taille IAB.
+            if (el.querySelector('iframe, img') || matchesIAB(w, h)) {{
+                addAd(el, 'behavior_ad_container');
+            }}
         }});
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

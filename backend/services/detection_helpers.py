@@ -125,3 +125,68 @@ def visible_ad_score(result: dict) -> tuple:
 def pick_best(results: list) -> dict:
     """Retourne le résultat avec le plus de pubs visibles (départage : surface)."""
     return max(results, key=visible_ad_score)
+
+
+# ── Classification de détection pub (friendly iframes, conteneurs ad, IAB) ──
+# Tailles IAB standard (source unique ; pw_worker importe cette liste pour le JS).
+IAB_SIZES = [
+    (728, 90), (300, 250), (160, 600), (300, 600),
+    (970, 250), (970, 90), (320, 50), (320, 100),
+    (336, 280), (120, 600), (468, 60), (250, 250),
+    (180, 150), (300, 50),
+]
+IAB_TOLERANCE = 20
+
+# Tokens de classe/id qui, SEULS, marquent un conteneur pub (égalité exacte).
+AD_CONTAINER_TOKENS = (
+    "ad", "ads", "pub", "pubs", "publicite", "publicites",
+    "annonce", "annonces", "werbung", "reklama", "sponsor", "sponsored",
+)
+# Sous-chaînes ad reconnues à l'intérieur d'un token (réseaux / frameworks).
+AD_CONTAINER_SUBSTRINGS = (
+    "actirise", "adunit", "adslot", "adsense", "adsbygoogle", "adtech",
+    "advert", "adngin", "adbutler", "prebid", "googletag", "gpt", "dfp",
+    "taboola", "outbrain", "smartad", "admiral",
+)
+
+
+def iab_size_match(w, h, sizes=IAB_SIZES, tolerance: int = IAB_TOLERANCE) -> bool:
+    """Vrai si (w, h) correspond à une taille IAB standard (± tolerance)."""
+    w = w or 0
+    h = h or 0
+    for iw, ih in sizes:
+        if abs(w - iw) <= tolerance and abs(h - ih) <= tolerance:
+            return True
+    return False
+
+
+def is_ad_container_signature(signature) -> bool:
+    """Vrai si la signature (`id + ' ' + className`) d'un élément dénote un
+    conteneur publicitaire. Tokenise sur les non-alphanum pour éviter les faux
+    positifs ('header', 'loader', 'gradient'… contiennent 'ad' en sous-chaîne
+    mais ne sont PAS des tokens 'ad')."""
+    if not signature:
+        return False
+    import re
+    tokens = [t for t in re.split(r"[^a-z0-9]+", signature.lower()) if t]
+    for tok in tokens:
+        if tok in AD_CONTAINER_TOKENS:
+            return True
+        if any(sub in tok for sub in AD_CONTAINER_SUBSTRINGS):
+            return True
+    return False
+
+
+def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
+                          min_w: int = 100, min_h: int = 30) -> bool:
+    """Vrai si une iframe « friendly » (src vide / about:blank / javascript:,
+    créa injectée par JS — rendu standard Prebid/SafeFrame/actirise) est une pub.
+    Critère : friendly + taille non triviale + (taille IAB OU dans un conteneur
+    ad). Les iframes à vrai src (cross-origin) renvoient False — gérées ailleurs."""
+    s = (src or "").strip().lower()
+    is_friendly = s in ("", "about:blank") or s.startswith("javascript:")
+    if not is_friendly:
+        return False
+    if (width or 0) < min_w or (height or 0) < min_h:
+        return False
+    return bool(iab_match or in_ad_container)
