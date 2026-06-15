@@ -1,25 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { getSites, getSiteStats, getSiteCountries } from '@/lib/api';
-import type { SiteEntry, SiteStats, SiteListResponse } from '@/lib/types';
+import { getSites, getSiteCountries, categorizeDomains } from '@/lib/api';
+import type { SiteEntry, SiteListResponse } from '@/lib/types';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { KpiCard } from '@/components/dashboard/KpiCard';
-import { HealthDonut } from '@/components/dashboard/HealthDonut';
-import { CategoryChart } from '@/components/dashboard/CategoryChart';
-import { ServerMap } from '@/components/dashboard/ServerMap';
-import { COLORS } from '@/lib/constants';
-import { Globe, Search, ChevronUp, ChevronDown, Minus, ArrowUpDown } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from 'recharts';
+import { Globe, Search, ChevronUp, ChevronDown, Minus, ArrowUpDown, Brain, Loader2 } from 'lucide-react';
 
 /* ── helpers ── */
 
@@ -47,34 +33,12 @@ function fmtDate(iso: string | null): string {
   }
 }
 
-/* ── recharts custom tooltip ── */
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      style={{
-        background: '#121212',
-        border: '1px solid #404040',
-        borderRadius: 8,
-        padding: '6px 12px',
-      }}
-    >
-      <p className="font-label text-[11px] text-on-surface-variant">{label}</p>
-      <p className="font-label text-xs font-medium text-on-surface">{payload[0].value}</p>
-    </div>
-  );
-}
-
 /* ── SiteDetailModal ── */
+
+function domainToScreenshotFile(domain: string, type: 'viewport' | 'full'): string {
+  const sanitized = domain.replace(/\./g, '_');
+  return `/api/screenshots/${sanitized}_${type}.png`;
+}
 
 function SiteDetailModal({
   site,
@@ -83,8 +47,59 @@ function SiteDetailModal({
   site: SiteEntry;
   onClose: () => void;
 }) {
-  const score = site.last_score;
-  const adtechEntries = Object.entries(site.adtech ?? {}).filter(([, v]) => v);
+  const [showFull, setShowFull] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
+  const [bust, setBust] = useState(0);
+  const [liveScore, setLiveScore] = useState<number | null>(site.last_score);
+  const [liveStatus, setLiveStatus] = useState<string>(site.editorial_status);
+  const [noteInput, setNoteInput] = useState('');
+  const [validating, setValidating] = useState(false);
+  const score = liveScore;
+  const toReview = liveStatus === 'to_review';
+  const adtechEntries = useMemo(() => Object.entries(site.adtech ?? {}).filter(([, v]) => v), [site]);
+
+  const handleRescan = async () => {
+    setRescanning(true);
+    try {
+      const res = await fetch(`/api/sites/${encodeURIComponent(site.domain)}/rescan`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.score === 'number' || data.score === null) setLiveScore(data.score);
+        if (data.editorial_status) setLiveStatus(data.editorial_status);
+        setImgError(false);
+        setShowFull(false);
+        setBust(Date.now()); // cache-bust the screenshot so the new capture loads
+      }
+    } catch {
+      /* ignore — keep showing previous state */
+    } finally {
+      setRescanning(false);
+    }
+  };
+
+  const handleValidate = async () => {
+    const n = parseFloat(noteInput.replace(',', '.'));
+    if (isNaN(n) || n < 0 || n > 10) return;
+    setValidating(true);
+    try {
+      const res = await fetch(`/api/sites/${encodeURIComponent(site.domain)}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ score: n }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLiveScore(data.score);
+        setLiveStatus('validated');
+        setNoteInput('');
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setValidating(false);
+    }
+  };
 
   return (
     <div
@@ -107,21 +122,35 @@ function SiteDetailModal({
               {site.domain}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors px-3 py-1.5 border border-outline/30 rounded-lg"
-          >
-            Fermer
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRescan}
+              disabled={rescanning}
+              className="font-label text-[10px] uppercase tracking-widest text-accent hover:text-on-surface transition-colors px-3 py-1.5 border border-accent/30 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              {rescanning && <Loader2 className="w-3 h-3 animate-spin" />}
+              {rescanning ? 'Rescan…' : 'Rescanner'}
+            </button>
+            <button
+              onClick={onClose}
+              className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors px-3 py-1.5 border border-outline/30 rounded-lg"
+            >
+              Fermer
+            </button>
+          </div>
         </div>
 
         {/* 2×2 metric grid */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="bg-surface-high rounded-xl p-4">
             <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-2">Score</p>
-            <span className={`text-3xl font-extralight tracking-tighter ${scoreColor(score)}`}>
-              {score != null ? score.toFixed(1) : '—'}
-            </span>
+            {toReview ? (
+              <span className="text-lg font-label uppercase tracking-wider text-warning">À valider</span>
+            ) : (
+              <span className={`text-3xl font-extralight tracking-tighter ${scoreColor(score)}`}>
+                {score != null ? score.toFixed(1) : '—'}
+              </span>
+            )}
           </div>
           <div className="bg-surface-high rounded-xl p-4">
             <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-2">Sante</p>
@@ -140,6 +169,36 @@ function SiteDetailModal({
             <Badge variant={site.last_ads_txt != null && site.last_ads_txt > 0 ? 'present' : 'absent'}>
               {site.last_ads_txt != null && site.last_ads_txt > 0 ? `${site.last_ads_txt} vendeurs` : 'Absent'}
             </Badge>
+          </div>
+        </div>
+
+        {/* Validation manuelle de la note */}
+        <div className={`mb-6 rounded-xl p-4 border ${toReview ? 'border-warning/40 bg-warning/[0.04]' : 'border-white/[0.06] bg-surface-high'}`}>
+          <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-1">
+            {toReview ? 'À valider — 0 pub détectée, vérifie la capture' : 'Ajuster la note manuellement'}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={0.1}
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              placeholder="0-10"
+              className="w-24 px-3 py-2 bg-surface-container border border-outline/30 rounded-lg text-sm text-on-surface focus:outline-none focus:border-accent/50"
+            />
+            <button
+              onClick={handleValidate}
+              disabled={validating || noteInput.trim() === ''}
+              className="px-4 py-2 rounded-lg bg-primary-electric text-white text-xs font-medium uppercase tracking-wider hover:brightness-110 transition-all disabled:opacity-30 flex items-center gap-1.5"
+            >
+              {validating && <Loader2 className="w-3 h-3 animate-spin" />}
+              {validating ? 'Validation…' : 'Valider'}
+            </button>
+            {liveStatus === 'validated' && (
+              <span className="font-label text-[10px] uppercase tracking-wider text-success">✓ Validé</span>
+            )}
           </div>
         </div>
 
@@ -192,7 +251,7 @@ function SiteDetailModal({
 
         {/* Adtech */}
         {adtechEntries.length > 0 && (
-          <div>
+          <div className="mb-5">
             <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-2">
               Adtech detecte
             </p>
@@ -205,6 +264,32 @@ function SiteDetailModal({
                   {k}
                 </span>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Screenshot */}
+        {!imgError && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant">
+                Capture d&apos;ecran
+              </p>
+              <button
+                onClick={() => setShowFull((v) => !v)}
+                className="font-label text-[9px] uppercase tracking-wider text-accent hover:text-on-surface transition-colors"
+              >
+                {showFull ? 'Viewport' : 'Page complete'}
+              </button>
+            </div>
+            <div className="rounded-xl overflow-hidden border border-white/[0.06] bg-surface-high">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={domainToScreenshotFile(site.domain, showFull ? 'full' : 'viewport') + (bust ? `?t=${bust}` : '')}
+                alt={`Capture ${site.domain}`}
+                className="w-full h-auto"
+                onError={() => setImgError(true)}
+              />
             </div>
           </div>
         )}
@@ -225,8 +310,6 @@ function SortIcon({ col, sortCol, sortOrder }: { col: string; sortCol: string; s
 /* ── Main Page ── */
 
 export default function SitesPage() {
-  const [tab, setTab] = useState<'dashboard' | 'sites'>('dashboard');
-  const [stats, setStats] = useState<SiteStats | null>(null);
   const [sites, setSites] = useState<SiteEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
@@ -246,15 +329,66 @@ export default function SitesPage() {
 
   const [selectedSite, setSelectedSite] = useState<SiteEntry | null>(null);
 
-  /* ── Load stats + countries once ── */
+  // Categorization modal
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [mistralKey, setMistralKey] = useState('');
+  const [catLoading, setCatLoading] = useState(false);
+  const [catProgress, setCatProgress] = useState('');
+  const [catDone, setCatDone] = useState(false);
+
+  /* ── Load country list for the filter dropdown once ── */
   useEffect(() => {
-    Promise.all([getSiteStats(), getSiteCountries()])
-      .then(([s, c]) => {
-        setStats(s);
-        setCountries(c);
-      })
-      .catch(console.error);
+    getSiteCountries().then(setCountries).catch(console.error);
   }, []);
+
+  /* ── Bulk categorize ── */
+  const handleCategorize = async () => {
+    if (!mistralKey.trim()) return;
+    setCatLoading(true);
+    setCatProgress('');
+    setCatDone(false);
+
+    try {
+      // Get all uncategorized domain IDs
+      const allRes = await getSites({ per_page: 500 });
+      const uncategorized = allRes.sites.filter((s) => !s.category_iab);
+      if (uncategorized.length === 0) {
+        setCatProgress('Tous les sites sont deja categorises !');
+        setCatDone(true);
+        setCatLoading(false);
+        return;
+      }
+
+      setCatProgress(`Categorisation de ${uncategorized.length} sites en cours...`);
+
+      // Process in batches of 10 to show progress
+      const batchSize = 10;
+      let processed = 0;
+      let errors = 0;
+      for (let i = 0; i < uncategorized.length; i += batchSize) {
+        const batch = uncategorized.slice(i, i + batchSize);
+        const ids = batch.map((s) => s.id);
+        try {
+          const res = await categorizeDomains(ids, mistralKey.trim());
+          processed += res.processed;
+          errors += res.errors;
+        } catch (e) {
+          errors += batch.length;
+        }
+        setCatProgress(`${Math.min(i + batchSize, uncategorized.length)} / ${uncategorized.length} sites traites...`);
+      }
+
+      setCatProgress(`Termine ! ${processed} categorises, ${errors} erreurs.`);
+      setCatDone(true);
+
+      // Refresh the table to show the new categories
+      setPage(1);
+    } catch (e) {
+      setCatProgress(`Erreur: ${e instanceof Error ? e.message : 'Inconnue'}`);
+    } finally {
+      setCatLoading(false);
+    }
+  };
 
   /* ── Load sites on filter/sort/page change ── */
   useEffect(() => {
@@ -279,29 +413,6 @@ export default function SitesPage() {
       .finally(() => setLoading(false));
   }, [page, perPage, sortCol, sortOrder, search, filterHealth, filterCountry, filterAdsTxt, filterCategory]);
 
-  /* ── Map data ── */
-  const mapData = useMemo(
-    () =>
-      sites
-        .filter((s) => s.last_country)
-        .map((s) => ({
-          domain: s.domain,
-          country: s.last_country ?? '',
-          countryCode: '',
-          city: '',
-          ip: '',
-          isp: '',
-          score: s.last_score ?? undefined,
-          action:
-            s.last_score != null && s.last_score < 4
-              ? 'remove'
-              : s.last_score != null && s.last_score < 7
-              ? 'flag'
-              : undefined,
-        })),
-    [sites]
-  );
-
   /* ── Sort handler ── */
   function handleSort(col: string) {
     if (sortCol === col) {
@@ -312,42 +423,6 @@ export default function SitesPage() {
     }
     setPage(1);
   }
-
-  /* ── Score bucket colors ── */
-  function bucketColor(range: string): string {
-    const low = parseFloat(range.split('-')[0] ?? range);
-    if (low >= 7) return COLORS.success;
-    if (low >= 4) return COLORS.warning;
-    return COLORS.danger;
-  }
-
-  /* ── Top countries chart data ── */
-  const topCountriesData = useMemo(
-    () =>
-      stats?.countries
-        ?.slice(0, 10)
-        .map((c) => ({ name: c.country || 'Unknown', count: c.count })) ?? [],
-    [stats]
-  );
-
-  /* ── Adtech chart data ── */
-  const adtechData = useMemo(
-    () =>
-      Object.entries(stats?.adtech ?? {})
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 15),
-    [stats]
-  );
-
-  /* ── Category map for CategoryChart ── */
-  const categoryMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    (stats?.categories ?? []).forEach((c) => {
-      if (c.category) m[c.category] = c.count;
-    });
-    return m;
-  }, [stats]);
 
   const ThCol = ({
     col,
@@ -388,225 +463,7 @@ export default function SitesPage() {
         </div>
       </div>
 
-      {/* Tab switcher */}
-      <div className="mb-8 animate-fade-up delay-2">
-        <div className="inline-flex bg-surface-container rounded-full p-1 gap-1">
-          {(['dashboard', 'sites'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-5 py-2 rounded-full font-label text-[11px] uppercase tracking-[0.15em] font-extralight transition-all duration-200 ${
-                tab === t
-                  ? 'bg-surface-high text-on-surface shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              {t === 'dashboard' ? 'Dashboard' : 'Sites List'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── DASHBOARD TAB ── */}
-      {tab === 'dashboard' && (
-        <div className="space-y-6 animate-fade-up delay-3">
-          {/* KPI row 1 */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <KpiCard
-              label="Sites crawles"
-              value={stats?.total ?? '—'}
-            />
-            <KpiCard
-              label="Score moyen"
-              value={stats?.avg_score != null ? stats.avg_score.toFixed(1) : '—'}
-              color={
-                stats?.avg_score != null
-                  ? stats.avg_score >= 7
-                    ? COLORS.success
-                    : stats.avg_score >= 4
-                    ? COLORS.warning
-                    : COLORS.danger
-                  : undefined
-              }
-            />
-            <KpiCard
-              label="Sites MFA"
-              value={stats?.mfa ?? '—'}
-              color={COLORS.danger}
-            />
-            <KpiCard
-              label="ads.txt OK"
-              value={
-                stats?.total
-                  ? `${Math.round((stats.ads_txt_ok / stats.total) * 100)}%`
-                  : '—'
-              }
-            />
-            <KpiCard
-              label="Sites alive"
-              value={stats?.alive ?? '—'}
-              color={COLORS.success}
-            />
-          </div>
-
-          {/* KPI row 2 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard
-              label="Ad count moyen"
-              value={
-                stats?.avg_ad_count != null ? stats.avg_ad_count.toFixed(1) : '—'
-              }
-            />
-            <KpiCard
-              label="Top pays"
-              value={stats?.countries?.[0]?.country ?? '—'}
-            />
-            <KpiCard
-              label="Redirections"
-              value={stats?.redirect ?? '—'}
-              color={COLORS.warning}
-            />
-            <KpiCard
-              label="Erreurs"
-              value={(stats?.dead ?? 0) + (stats?.error ?? 0)}
-              color={COLORS.danger}
-            />
-          </div>
-
-          {/* ServerMap */}
-          <ServerMap data={mapData} />
-
-          {/* Charts grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Score distribution */}
-            <Card>
-              <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
-                Distribution des scores
-              </span>
-              <div className="w-full mt-4" style={{ height: 220 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={stats?.score_buckets ?? []}
-                    margin={{ left: 0, right: 0, top: 0, bottom: 0 }}
-                  >
-                    <XAxis
-                      dataKey="range"
-                      tick={{ fill: '#909090', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fill: '#909090', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                      allowDecimals={false}
-                    />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={24}>
-                      {(stats?.score_buckets ?? []).map((b, i) => (
-                        <Cell key={i} fill={bucketColor(b.range)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-
-            {/* Health donut */}
-            <HealthDonut
-              healthy={
-                (stats?.alive ?? 0) - (stats?.mfa ?? 0) > 0
-                  ? (stats?.alive ?? 0) - (stats?.mfa ?? 0)
-                  : 0
-              }
-              flagged={stats?.redirect ?? 0}
-              mfa={stats?.mfa ?? 0}
-              dead={stats?.dead ?? 0}
-            />
-
-            {/* Top 10 countries */}
-            <Card>
-              <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
-                Top 10 pays
-              </span>
-              <div className="w-full mt-4" style={{ height: Math.max(200, topCountriesData.length * 32 + 40) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={topCountriesData}
-                    layout="vertical"
-                    margin={{ left: 10, right: 10, top: 0, bottom: 0 }}
-                  >
-                    <XAxis
-                      type="number"
-                      tick={{ fill: '#909090', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                      allowDecimals={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={90}
-                      tick={{ fill: '#909090', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,102,255,0.04)' }} />
-                    <Bar dataKey="count" fill={COLORS.accent} radius={[0, 4, 4, 0]} barSize={18} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-
-            {/* Categories IAB */}
-            <CategoryChart data={categoryMap} />
-
-            {/* Adtech stack — full width */}
-            {adtechData.length > 0 && (
-              <div className="lg:col-span-2">
-                <Card>
-                  <span className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant font-extralight">
-                    Stack adtech detectee
-                  </span>
-                  <div
-                    className="w-full mt-4"
-                    style={{ height: Math.max(200, adtechData.length * 32 + 40) }}
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={adtechData}
-                        layout="vertical"
-                        margin={{ left: 10, right: 10, top: 0, bottom: 0 }}
-                      >
-                        <XAxis
-                          type="number"
-                          tick={{ fill: '#909090', fontSize: 10 }}
-                          axisLine={false}
-                          tickLine={false}
-                          allowDecimals={false}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={140}
-                          tick={{ fill: '#909090', fontSize: 10 }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(0,102,255,0.04)' }} />
-                        <Bar dataKey="count" fill={COLORS.primary} radius={[0, 4, 4, 0]} barSize={18} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── SITES TAB ── */}
-      {tab === 'sites' && (
+      {/* ── Sites list ── */}
         <div className="space-y-4 animate-fade-up delay-3">
           {/* Filters */}
           <Card>
@@ -723,18 +580,24 @@ export default function SitesPage() {
                         </td>
                         {/* Score */}
                         <td className="px-3 py-3 whitespace-nowrap">
-                          <span className={`font-label text-sm font-light flex items-center gap-1 ${scoreColor(site.last_score)}`}>
-                            {site.last_score != null ? site.last_score.toFixed(1) : '—'}
-                            {site.last_score_trend === 'up' && (
-                              <ChevronUp className="w-3 h-3 text-success" />
-                            )}
-                            {site.last_score_trend === 'down' && (
-                              <ChevronDown className="w-3 h-3 text-danger" />
-                            )}
-                            {site.last_score_trend === 'stable' && (
-                              <Minus className="w-3 h-3 text-on-surface-variant/40" />
-                            )}
-                          </span>
+                          {site.editorial_status === 'to_review' ? (
+                            <span className="font-label text-[10px] uppercase tracking-wider text-warning border border-warning/30 rounded px-2 py-0.5">
+                              À valider
+                            </span>
+                          ) : (
+                            <span className={`font-label text-sm font-light flex items-center gap-1 ${scoreColor(site.last_score)}`}>
+                              {site.last_score != null ? site.last_score.toFixed(1) : '—'}
+                              {site.last_score_trend === 'up' && (
+                                <ChevronUp className="w-3 h-3 text-success" />
+                              )}
+                              {site.last_score_trend === 'down' && (
+                                <ChevronDown className="w-3 h-3 text-danger" />
+                              )}
+                              {site.last_score_trend === 'stable' && (
+                                <Minus className="w-3 h-3 text-on-surface-variant/40" />
+                              )}
+                            </span>
+                          )}
                         </td>
                         {/* Sante */}
                         <td className="px-3 py-3">
@@ -807,11 +670,72 @@ export default function SitesPage() {
             </div>
           </div>
         </div>
-      )}
 
       {/* ── Site Detail Modal ── */}
       {selectedSite && (
         <SiteDetailModal site={selectedSite} onClose={() => setSelectedSite(null)} />
+      )}
+
+      {/* ── Categorization Modal ── */}
+      {showCatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !catLoading && setShowCatModal(false)}>
+          <div className="glass-card rounded-2xl p-8 max-w-md w-full mx-4 glow-card" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-6">
+              <Brain size={24} className="text-accent" />
+              <h2 className="text-xl font-extralight text-on-surface">Categorisation IA</h2>
+            </div>
+
+            {!catDone ? (
+              <>
+                <p className="text-sm text-on-surface-variant mb-4">
+                  Categorise tous les sites via Mistral AI.<br />
+                  Votre cle n&apos;est pas stockee.
+                </p>
+                <input
+                  type="password"
+                  placeholder="Cle API Mistral..."
+                  value={mistralKey}
+                  onChange={(e) => setMistralKey(e.target.value)}
+                  disabled={catLoading}
+                  className="w-full px-4 py-3 bg-surface-high rounded-lg text-sm text-on-surface border border-outline/30 focus:border-accent/50 outline-none mb-4"
+                />
+                {catProgress && (
+                  <div className="flex items-center gap-2 mb-4 text-sm text-accent">
+                    {catLoading && <Loader2 size={14} className="animate-spin" />}
+                    <span>{catProgress}</span>
+                  </div>
+                )}
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setShowCatModal(false)}
+                    disabled={catLoading}
+                    className="px-4 py-2 rounded-lg text-sm text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-30"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleCategorize}
+                    disabled={catLoading || !mistralKey.trim()}
+                    className="px-5 py-2 rounded-lg bg-primary-electric text-white text-sm font-light hover:brightness-110 transition-all disabled:opacity-30 flex items-center gap-2"
+                  >
+                    {catLoading ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
+                    {catLoading ? 'En cours...' : 'Lancer'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-success mb-6">{catProgress}</p>
+                <button
+                  onClick={() => { setShowCatModal(false); setCatDone(false); setCatProgress(''); }}
+                  className="px-5 py-2 rounded-lg bg-primary-electric text-white text-sm font-light hover:brightness-110 transition-all"
+                >
+                  Fermer
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

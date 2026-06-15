@@ -146,20 +146,9 @@ async def run_audit(
 
     async def event_generator():
         audit_id = str(uuid4())
-        def _clean_domain(d: str) -> str:
-            d = d.strip().lower()
-            # Strip protocol
-            for prefix in ("https://", "http://"):
-                if d.startswith(prefix):
-                    d = d[len(prefix):]
-            # Strip www. prefix
-            if d.startswith("www."):
-                d = d[4:]
-            # Strip trailing slash
-            d = d.rstrip("/")
-            return d
+        from services.site_utils import clean_domain
 
-        domains = [_clean_domain(d) for d in request.domains if d.strip()]
+        domains = [clean_domain(d) for d in request.domains if d.strip()]
         domains = [d for d in domains if d]  # Remove empty after cleaning
         audit_logs: list[str] = []  # Collect all log messages for saving
 

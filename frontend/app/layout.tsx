@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Manrope, JetBrains_Mono } from 'next/font/google';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import './globals.css';
 import { AppShell } from '@/components/layout/AppShell';
 

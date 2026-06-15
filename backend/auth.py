@@ -13,7 +13,7 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request
 
-from db import fetch_one, execute, get_db, _uuid, _now
+from db import fetch_one, fetch_all, execute, get_db, _uuid, _now
 
 SECRET_KEY = os.environ.get("MLI_JWT_SECRET", "mli-dev-secret-change-in-prod")
 ALGORITHM = "HS256"
@@ -49,17 +49,57 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def _get_default_user() -> dict | None:
+    user = await fetch_one(
+        "SELECT * FROM users WHERE email = 'admin@dentsu.com'",
+        (),
+    )
+    if user:
+        return user
+    user = await fetch_one(
+        "SELECT * FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1",
+        (),
+    )
+    if user:
+        return user
+    return await fetch_one(
+        "SELECT * FROM users ORDER BY created_at ASC LIMIT 1",
+        (),
+    )
+
+
 async def get_current_user(request: Request) -> dict:
-    """Extract and validate JWT from Authorization header."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing token")
-    token = auth[7:]
-    payload = decode_token(token)
-    user = await fetch_one("SELECT * FROM users WHERE id = ?", (payload["sub"],))
+    """Auth disabled — always return the default admin user."""
+    user = await _get_default_user()
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=500, detail="No seed user available")
     return user
+
+
+async def ensure_default_user_in_all_workspaces() -> None:
+    """Auth disabled — make sure the default user is a member of every workspace
+    so that historical data (audits, whitelists, activity) is visible."""
+    user = await _get_default_user()
+    if not user:
+        return
+    workspaces = await fetch_all("SELECT id FROM workspaces", ())
+    if not workspaces:
+        return
+    added = 0
+    for ws in workspaces:
+        existing = await fetch_one(
+            "SELECT 1 as x FROM workspace_members WHERE workspace_id = ? AND user_id = ?",
+            (ws["id"], user["id"]),
+        )
+        if existing:
+            continue
+        await execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+            (ws["id"], user["id"], "owner", _now()),
+        )
+        added += 1
+    if added:
+        print(f"[MLI] Auth disabled: added default user to {added} workspaces")
 
 
 async def seed_users() -> None:

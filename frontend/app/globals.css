@@ -122,9 +122,7 @@ body {
   animation: glow-pulse 2.5s ease-in-out infinite;
 }
 
-/* ─── MapLibre GL ─── */
-@import 'maplibre-gl/dist/maplibre-gl.css';
-
+/* ─── MapLibre GL overrides ─── */
 .maplibregl-popup-content {
   background: rgba(18, 18, 18, 0.9) !important;
   backdrop-filter: blur(24px);

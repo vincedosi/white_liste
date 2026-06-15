@@ -1,14 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { AuthContext } from './AuthContext';
-import { login as apiLogin, getMe, getToken, setToken, clearToken, getWorkspaces as fetchWorkspaces } from '@/lib/api';
+import { getMe, getWorkspaces as fetchWorkspaces } from '@/lib/api';
 import type { User, Workspace } from '@/lib/types';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
@@ -22,52 +19,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      setLoading(false);
-      if (pathname !== '/login') router.push('/login');
-      return;
-    }
-    getMe()
-      .then((data) => {
+    async function loadDefaultUser() {
+      try {
+        const data = await getMe();
         setUser(data.user);
-        setWorkspaces(data.workspaces);
-        if (data.workspaces.length > 0 && !currentWorkspace) {
+        setWorkspaces(data.workspaces || []);
+        if (data.workspaces?.length > 0) {
           setCurrentWorkspace(data.workspaces[0]);
         }
-      })
-      .catch(() => {
-        clearToken();
-        if (pathname !== '/login') router.push('/login');
-      })
-      .finally(() => setLoading(false));
+      } catch { /* ignore */ }
+      setLoading(false);
+    }
+    loadDefaultUser();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const data = await apiLogin(email, password);
-    setToken(data.access_token);
-    setUser(data.user);
-    const me = await getMe();
-    setWorkspaces(me.workspaces);
-    if (me.workspaces.length > 0) {
-      setCurrentWorkspace(me.workspaces[0]);
-    }
-    router.push('/workspaces');
+  const login = async (_email: string, _password: string) => {
+    /* auth disabled */
   };
 
   const logout = () => {
-    clearToken();
-    setUser(null);
-    setWorkspaces([]);
-    setCurrentWorkspace(null);
-    router.push('/login');
+    /* auth disabled */
   };
 
-  useEffect(() => {
-    if (!loading && !user && pathname !== '/login') {
-      router.push('/login');
-    }
-  }, [loading, user, pathname]);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <AuthContext.Provider value={{ user, workspaces, currentWorkspace, loading, login, logout, setCurrentWorkspace, refreshWorkspaces }}>

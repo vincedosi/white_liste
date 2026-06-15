@@ -257,7 +257,7 @@ export interface MeResponse {
 export interface DomainEntry {
   id: string;
   domain: string;
-  editorial_status: 'pending' | 'validated' | 'blacklisted';
+  editorial_status: 'pending' | 'to_review' | 'validated' | 'blacklisted';
   brand_safety: 'safe' | 'moderate' | 'unsafe' | null;
   brand_safety_source: 'mistral' | 'manual' | null;
   category_iab: string | null;
@@ -306,7 +306,7 @@ export interface CategorizeResult {
 export interface SiteEntry {
   id: string;
   domain: string;
-  editorial_status: 'pending' | 'validated' | 'blacklisted';
+  editorial_status: 'pending' | 'to_review' | 'validated' | 'blacklisted';
   brand_safety: 'safe' | 'moderate' | 'unsafe' | null;
   category_iab: string | null;
   notes: string | null;

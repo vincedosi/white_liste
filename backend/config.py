@@ -83,3 +83,21 @@ Métadonnées du site :
 - Description : {description}
 - H1 principal : {h1}
 """
+
+# ── Détection vidéo (in-stream / replay) ─────────────────
+VIDEO_AD_DOMAINS = [
+    "imasdk.googleapis.com", "freewheel.com", "spotx.tv", "spotxchange.com",
+    "springserve.com", "teads.tv", "jwpcdn.com", "jwplayer.com",
+    "dailymotion.com/player",
+]
+VIDEO_AD_PATH_HINTS = ["/pubads", "vast", "vmap", "video_ad", "preroll"]
+VIDEO_PLAYER_SELECTOR = (
+    "video, .video-js, .jwplayer, [class*='player'], [id*='player'], "
+    "iframe[src*='dailymotion'], iframe[src*='youtube']"
+)
+VIDEO_PENALTY_PER_UNIT = 1.5
+
+# ── Garde-fou chargement de page (anti page blanche / SPA) ─
+CONTENT_MIN_TEXT = 200    # caractères de texte visible minimum
+CONTENT_MIN_NODES = 50    # nœuds DOM minimum
+NAV_RETRY_TIMEOUT_MS = 15_000

@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { AuditRequest } from '@/lib/types';
 
 // Direct backend URL — Next.js rewrite proxy buffers SSE, so bypass it.
-const BACKEND_URL = 'http://localhost:8005/api';
+const BACKEND_URL = 'http://localhost:8020/api';
 
 export interface AuditStreamState {
   logs: string[];
@@ -48,7 +48,10 @@ export function useAuditStream(): UseAuditStreamReturn {
     // MUST persist across onprogress calls — SSE event/data may arrive in separate chunks
     let currentEvt = '';
 
-    xhr.open('POST', `${BACKEND_URL}/audit`);
+    // workspace_id must be sent as query param (not in body)
+    const wsId = (request as unknown as Record<string, unknown>).workspace_id as string | undefined;
+    const qs = wsId ? `?workspace_id=${encodeURIComponent(wsId)}` : '';
+    xhr.open('POST', `${BACKEND_URL}/audit${qs}`);
     xhr.setRequestHeader('Content-Type', 'application/json');
 
     xhr.onprogress = () => {
@@ -156,7 +159,9 @@ export function useAuditStream(): UseAuditStreamReturn {
     };
 
     xhr.timeout = 0;
-    xhr.send(JSON.stringify(request));
+    // Strip workspace_id from body (sent as query param)
+    const { workspace_id: _ws, ...body } = request as unknown as Record<string, unknown>;
+    xhr.send(JSON.stringify(body));
   }, []);
 
   return { logs, currentStep, results, isRunning, error, auditId, startAudit };

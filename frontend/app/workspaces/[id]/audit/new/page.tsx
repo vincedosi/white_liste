@@ -81,21 +81,8 @@ export default function WorkspaceAuditNewPage() {
   const handleLaunch = async () => {
     const list = domains.split('\n').map((l) => l.trim()).filter(Boolean);
     if (list.length === 0) return;
-
-    setChecking(true);
-    try {
-      const result = await checkDomains(list);
-      if (result.already_crawled > 0 || result.known_dead_count > 0) {
-        setCheckResult(result);
-        setForceRecrawl(new Set());
-      } else {
-        launchAudit(result.new_domains);
-      }
-    } catch {
-      launchAudit(list);
-    } finally {
-      setChecking(false);
-    }
+    // Launch directly — no domain check gate
+    launchAudit(list);
   };
 
   // Step 2: Launch with final domain list
@@ -148,7 +135,7 @@ export default function WorkspaceAuditNewPage() {
     }
   }, [auditId, isRunning, error, router, wsId]);
 
-  const canLaunch = domainCount > 0 && !isRunning && !checking && !checkResult;
+  const canLaunch = domainCount > 0 && !isRunning;
 
   return (
     <div className="min-h-screen bg-background">

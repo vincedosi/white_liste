@@ -6,38 +6,24 @@ import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse
 
 const API_BASE = '/api';
 
-/* ── Token management ── */
+/* ── Token management (no-op stubs, auth disabled) ── */
 
 export function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('mli_token');
+  return null;
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem('mli_token', token);
+export function setToken(_token: string): void {
+  /* auth disabled */
 }
 
 export function clearToken(): void {
-  localStorage.removeItem('mli_token');
+  /* auth disabled */
 }
 
-/* ── Fetch with auth ── */
+/* ── Fetch (auth disabled) ── */
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getToken();
-  const headers = new Headers(options.headers);
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  const res = await fetch(url, { ...options, headers });
-  if (res.status === 401) {
-    clearToken();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login';
-    }
-    throw new Error('Unauthorized');
-  }
-  return res;
+  return fetch(url, options);
 }
 
 /* ── Auth ── */

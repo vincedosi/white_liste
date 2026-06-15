@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from routers import audit, history, health
 from db import init_db, close_db
-from auth import seed_users
+from auth import seed_users, ensure_default_user_in_all_workspaces
 from routers.auth_routes import router as auth_router
 from routers.workspaces import router as workspaces_router
 from routers.whitelists import router as whitelists_router
@@ -47,6 +47,7 @@ async def startup():
     await migrate_json_audits()
     from db import backfill_domains_from_audits
     await backfill_domains_from_audits()
+    await ensure_default_user_in_all_workspaces()
 
 
 @app.on_event("shutdown")
