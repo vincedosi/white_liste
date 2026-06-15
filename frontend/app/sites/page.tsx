@@ -9,6 +9,8 @@ import { SitesTable } from '@/components/sites/SitesTable';
 import { BulkActionsBar } from '@/components/sites/BulkActionsBar';
 import { SiteDetailModal } from '@/components/sites/SiteDetailModal';
 import { CategorizeModal } from '@/components/sites/CategorizeModal';
+import { ScanModal } from '@/components/sites/ScanModal';
+import { ScanLine } from 'lucide-react';
 
 export default function SitesPage() {
   const [stats, setStats] = useState<SiteStats | null>(null);
@@ -20,6 +22,7 @@ export default function SitesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<SiteEntry | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
 
   const [showCat, setShowCat] = useState(false);
   const [mistralKey, setMistralKey] = useState('');
@@ -103,6 +106,12 @@ export default function SitesPage() {
             <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">Inventaire des sites</p>
             <h1 className="text-xl font-medium text-on-surface mt-1">Analyse de placement publicitaire</h1>
           </div>
+          <button
+            onClick={() => setScanOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-electric text-white text-sm font-light hover:brightness-110 transition-all"
+          >
+            <ScanLine size={15} /> Scanner des sites
+          </button>
         </div>
         <SitesKpis stats={stats} />
       </header>
@@ -139,6 +148,19 @@ export default function SitesPage() {
         onRemove={() => alert('La suppression de sites n’est pas encore disponible (V1).')}
         onClear={() => setSelected(new Set())}
       />
+
+      {total === 0 && !loading && (
+        <div className="flex justify-center py-4">
+          <button
+            onClick={() => setScanOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary-electric text-white text-sm font-light hover:brightness-110 transition-all"
+          >
+            <ScanLine size={15} /> Scanner des premiers sites
+          </button>
+        </div>
+      )}
+
+      <ScanModal open={scanOpen} onClose={() => setScanOpen(false)} onDone={refreshAll} />
 
       {detail && <SiteDetailModal site={detail} onClose={() => { setDetail(null); refreshAll(); }} />}
       {showCat && (
