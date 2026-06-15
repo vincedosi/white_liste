@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
@@ -106,7 +107,6 @@ async def list_sites(
         conditions.append("last_ad_surface_pct <= ?")
         params.append(ad_pct_max)
     if stale_days is not None:
-        from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(days=stale_days)).isoformat()
         conditions.append("(last_audit_date IS NULL OR last_audit_date < ?)")
         params.append(cutoff)
@@ -189,6 +189,24 @@ async def sites_stats(user: dict = Depends(get_current_user)):
     )
     avg_ad_count = avg_ad_count_row["v"] if avg_ad_count_row else None
 
+    avg_pct_row = await fetch_one(
+        "SELECT AVG(last_ad_surface_pct) as v FROM domains WHERE last_ad_surface_pct IS NOT NULL", ()
+    )
+    avg_ad_surface_pct = avg_pct_row["v"] if avg_pct_row else None
+
+    problematic_row = await fetch_one(
+        "SELECT COUNT(*) as n FROM domains WHERE last_ad_surface_pct >= 50.0", ()
+    )
+    problematic = problematic_row["n"] if problematic_row else 0
+
+    from config import STALE_DAYS
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=STALE_DAYS)).isoformat()
+    stale_row = await fetch_one(
+        "SELECT COUNT(*) as n FROM domains WHERE last_audit_date IS NULL OR last_audit_date < ?",
+        (cutoff,),
+    )
+    stale = stale_row["n"] if stale_row else 0
+
     # ── Countries distribution ────────────────────────────────────────────────
     country_rows = await fetch_all(
         """SELECT last_country as country, COUNT(*) as count FROM domains
@@ -248,6 +266,9 @@ async def sites_stats(user: dict = Depends(get_current_user)):
         "ads_txt_ok": ads_txt_ok,
         "avg_score": round(avg_score, 2) if avg_score is not None else None,
         "avg_ad_count": round(avg_ad_count, 1) if avg_ad_count is not None else None,
+        "avg_ad_surface_pct": round(avg_ad_surface_pct, 2) if avg_ad_surface_pct is not None else None,
+        "problematic": problematic,
+        "stale": stale,
         "countries": countries,
         "categories": categories,
         "adtech": adtech,

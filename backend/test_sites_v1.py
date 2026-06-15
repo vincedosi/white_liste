@@ -108,8 +108,31 @@ async def test_list_filters_pct_and_stale():
     print("OK test_list_filters_pct_and_stale")
 
 
+async def test_stats_aggregates():
+    from db import close_db
+    await close_db()
+    if db_mod.DB_PATH.exists():
+        db_mod.DB_PATH.unlink()
+    db_mod._db = None
+    await init_db()
+    from db import upsert_domain, get_db
+    from routers.sites import sites_stats
+    await upsert_domain("a.fr", {"score": 9.0, "ad_surface_pct": 20.0, "audit_id": "x"})
+    await upsert_domain("b.fr", {"score": 2.0, "ad_surface_pct": 60.0, "audit_id": "x"})
+    dbc = await get_db()
+    await dbc.execute("UPDATE domains SET last_audit_date='2000-01-01T00:00:00' WHERE domain='a.fr'")
+    await dbc.commit()
+    s = await sites_stats(user={"id": "u"})
+    assert s["problematic"] == 1, s
+    assert s["stale"] >= 1, s
+    assert s["avg_ad_surface_pct"] is not None and 39.0 < s["avg_ad_surface_pct"] < 41.0, s
+    await close_db()
+    print("OK test_stats_aggregates")
+
+
 if __name__ == "__main__":
     asyncio.run(test_column_added())
     asyncio.run(test_upsert_writes_ad_surface_pct())
     asyncio.run(test_backfill_sets_pct_when_present())
     asyncio.run(test_list_filters_pct_and_stale())
+    asyncio.run(test_stats_aggregates())
