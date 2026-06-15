@@ -1,5 +1,5 @@
 'use client';
-import { Globe } from 'lucide-react';
+import { Globe, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { AdAreaBar } from './AdAreaBar';
 import { SiteKebabMenu } from './SiteKebabMenu';
@@ -23,14 +23,17 @@ function healthVariant(h: string | null): 'ok' | 'dead' | 'flag' | 'absent' {
 }
 
 export function SiteRow({
-  site, selected, onToggle, onOpen, onRescan, onValidate, onRemove,
+  site, selected, scanning, onToggle, onOpen, onRescan, onValidate, onRemove,
 }: {
-  site: SiteEntry; selected: boolean;
+  site: SiteEntry; selected: boolean; scanning: boolean;
   onToggle: () => void; onOpen: () => void;
   onRescan: () => void; onValidate: () => void; onRemove: () => void;
 }) {
   return (
-    <tr className="border-b border-outline/20 hover:bg-surface-high cursor-pointer transition-colors" onClick={onOpen}>
+    <tr
+      className={`border-b border-outline/20 hover:bg-surface-high cursor-pointer transition-all ${scanning ? 'opacity-50' : ''}`}
+      onClick={onOpen}
+    >
       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
         <input type="checkbox" checked={selected} onChange={onToggle} />
       </td>
@@ -47,7 +50,11 @@ export function SiteRow({
       </td>
       <td className="px-3 py-3 num text-sm text-on-surface">{site.last_ad_count ?? '—'}</td>
       <td className="px-3 py-3"><Badge variant={healthVariant(site.last_health)}>{site.last_health ?? '—'}</Badge></td>
-      <td className="px-3 py-3 text-xs text-on-surface-variant" title={site.last_audit_date ?? ''}>{timeAgo(site.last_audit_date)}</td>
+      <td className="px-3 py-3 text-xs text-on-surface-variant" title={scanning ? 'Analyse en cours…' : (site.last_audit_date ?? '')}>
+        {scanning
+          ? <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+          : timeAgo(site.last_audit_date)}
+      </td>
       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
         <SiteKebabMenu
           onRescan={onRescan} onValidate={onValidate}

@@ -1,4 +1,5 @@
 'use client';
+import { useRef, useEffect } from 'react';
 import { ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { SiteRow } from './SiteRow';
 import type { SiteEntry } from '@/lib/types';
@@ -13,14 +14,21 @@ const COLS: { key: string; label: string; sortable: boolean }[] = [
 
 export function SitesTable({
   sites, loading, sortCol, sortOrder, onSort,
-  selectedIds, onToggle, onToggleAll, onOpen, rowAction,
+  selectedIds, onToggle, onToggleAll, onOpen, rowAction, scanningIds,
 }: {
   sites: SiteEntry[]; loading: boolean;
   sortCol: string; sortOrder: 'asc' | 'desc'; onSort: (c: string) => void;
   selectedIds: Set<string>; onToggle: (id: string) => void; onToggleAll: () => void;
   onOpen: (s: SiteEntry) => void;
   rowAction: (action: 'rescan' | 'validate' | 'remove', s: SiteEntry) => void;
+  scanningIds: Set<string>;
 }) {
+  const allRef = useRef<HTMLInputElement>(null);
+  const allChecked = sites.length > 0 && selectedIds.size === sites.length;
+  useEffect(() => {
+    if (allRef.current) allRef.current.indeterminate = selectedIds.size > 0 && selectedIds.size < sites.length;
+  }, [selectedIds, sites.length]);
+
   const icon = (c: string) =>
     sortCol !== c ? <ArrowUpDown className="w-3 h-3 opacity-30" />
       : sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 text-accent" />
@@ -31,7 +39,7 @@ export function SitesTable({
       <thead className="sticky top-0 bg-background z-10">
         <tr className="border-b border-outline/30">
           <th className="px-3 py-3 w-10">
-            <input type="checkbox" checked={sites.length > 0 && selectedIds.size === sites.length} onChange={onToggleAll} />
+            <input ref={allRef} type="checkbox" checked={allChecked} onChange={onToggleAll} />
           </th>
           {COLS.map((c) => (
             <th key={c.key} onClick={() => c.sortable && onSort(c.key)}
@@ -55,6 +63,7 @@ export function SitesTable({
               <SiteRow
                 key={s.id} site={s}
                 selected={selectedIds.has(s.id)}
+                scanning={scanningIds.has(s.id)}
                 onToggle={() => onToggle(s.id)}
                 onOpen={() => onOpen(s)}
                 onRescan={() => rowAction('rescan', s)}

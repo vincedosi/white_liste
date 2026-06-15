@@ -18,6 +18,7 @@ export default function SitesPage() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [scanning, setScanning] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<SiteEntry | null>(null);
 
   const [showCat, setShowCat] = useState(false);
@@ -45,9 +46,18 @@ export default function SitesPage() {
   const toggleAll = () => setSelected((s) => (s.size === sites.length ? new Set() : new Set(sites.map((x) => x.id))));
   const refreshAll = () => { reload(); loadStats(); };
 
+  const markScan = (ids: string[], on: boolean) =>
+    setScanning((s) => {
+      const n = new Set(s);
+      ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
+      return n;
+    });
+
   const rowAction = async (action: 'rescan' | 'validate' | 'remove', s: SiteEntry) => {
     if (action === 'rescan') {
+      markScan([s.id], true);
       await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
+      markScan([s.id], false);
       refreshAll();
     } else if (action === 'remove') {
       // Pas d'endpoint de suppression côté backend en V1 — action honnête plutôt que 404 silencieux.
@@ -58,10 +68,13 @@ export default function SitesPage() {
   };
 
   const bulkRescan = async () => {
-    for (const s of sites.filter((x) => selected.has(x.id))) {
-      await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
-    }
+    const targets = sites.filter((x) => selected.has(x.id));
+    markScan(targets.map((x) => x.id), true);
     setSelected(new Set());
+    for (const s of targets) {
+      await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
+      markScan([s.id], false);
+    }
     refreshAll();
   };
 
@@ -107,7 +120,7 @@ export default function SitesPage() {
           sites={sites} loading={loading}
           sortCol={sortCol} sortOrder={sortOrder} onSort={onSort}
           selectedIds={selected} onToggle={toggle} onToggleAll={toggleAll}
-          onOpen={setDetail} rowAction={rowAction}
+          onOpen={setDetail} rowAction={rowAction} scanningIds={scanning}
         />
       </div>
 
