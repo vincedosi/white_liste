@@ -332,7 +332,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
         )
         await db.execute(
             """UPDATE domains SET
-                last_score = ?, last_score_trend = ?, last_health = ?,
+                last_score = ?, last_score_trend = ?, last_ad_surface_pct = ?, last_health = ?,
                 last_ads_txt = ?, last_ad_count = ?, last_load_time_ms = ?,
                 last_trackers = ?, last_adtech_json = ?,
                 last_country = ?, last_lang = ?, last_tld = ?,
@@ -340,7 +340,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
                 audit_count = audit_count + 1, updated_at = ?
             WHERE id = ?""",
             (
-                new_score, trend, audit_data.get("health"),
+                new_score, trend, audit_data.get("ad_surface_pct"), audit_data.get("health"),
                 audit_data.get("ads_txt"), audit_data.get("ad_count"),
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
@@ -353,13 +353,14 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
         editorial_status = "to_review" if suspect_blocked else "pending"
         await db.execute(
             """INSERT INTO domains
-            (id, domain, editorial_status, last_score, last_score_trend, last_health,
+            (id, domain, editorial_status, last_score, last_score_trend, last_ad_surface_pct, last_health,
              last_ads_txt, last_ad_count, last_load_time_ms, last_trackers, last_adtech_json,
              last_country, last_lang, last_tld, last_audit_id, last_audit_date,
              audit_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
-                _uuid(), domain_name, editorial_status, new_score, audit_data.get("health"),
+                _uuid(), domain_name, editorial_status, new_score, audit_data.get("ad_surface_pct"),
+                audit_data.get("health"),
                 audit_data.get("ads_txt"), audit_data.get("ad_count"),
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,

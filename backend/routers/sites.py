@@ -276,6 +276,7 @@ async def rescan_site(domain: str, user: dict = Depends(get_current_user)):
     ar = attention.get(domain)
     score = ar.score if ar else None
     ad_count = ar.ad_count if ar else None
+    ad_surface_pct = (ar.details or {}).get("ad_surface_pct") if ar else None
     adtech = adtech_results.get(domain) or {}
     trackers = tracker_results.get(domain) or {}
     trackers_total = trackers.get("total", 0) if isinstance(trackers, dict) else 0
@@ -290,12 +291,12 @@ async def rescan_site(domain: str, user: dict = Depends(get_current_user)):
 
     await execute(
         """UPDATE domains SET
-            last_score = ?, last_ad_count = ?, last_adtech_json = ?,
+            last_score = ?, last_ad_surface_pct = ?, last_ad_count = ?, last_adtech_json = ?,
             last_trackers = ?, last_lang = ?, last_audit_date = ?,
             editorial_status = ?, audit_count = audit_count + 1, updated_at = ?
            WHERE domain = ?""",
         (
-            score, ad_count, json.dumps(adtech) if adtech else None,
+            score, ad_surface_pct, ad_count, json.dumps(adtech) if adtech else None,
             trackers_total, lang, now, status, now, domain,
         ),
     )

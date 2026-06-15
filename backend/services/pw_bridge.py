@@ -138,7 +138,10 @@ def score_all_subprocess(
             ad_count=data.get("ad_count", 0),
             score=data.get("score", 5.0),
             is_mfa=data.get("is_mfa", False),
-            details=data.get("details", {}),
+            details={
+                **(data.get("details") or {}),
+                "ad_surface_pct": (data.get("page_profile") or {}).get("total_ad_surface_pct"),
+            },
             error=data.get("error"),
         )
         lang = data.get("content_lang", "")
@@ -177,7 +180,10 @@ def full_audit_subprocess(
             ad_count=data.get("ad_count", 0),
             score=data.get("score", 5.0),
             is_mfa=data.get("is_mfa", False),
-            details=data.get("details", {}),
+            details={
+                **(data.get("details") or {}),
+                "ad_surface_pct": (data.get("page_profile") or {}).get("total_ad_surface_pct"),
+            },
             error=data.get("error"),
         )
         lang = data.get("content_lang", "")
