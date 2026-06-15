@@ -122,7 +122,7 @@ async def list_sites(
 
     offset = (page - 1) * per_page
     rows = await fetch_all(
-        f"SELECT * FROM domains {where} ORDER BY {sort_col} {sort_order} LIMIT ? OFFSET ?",
+        f"SELECT * FROM domains {where} ORDER BY {sort_col} {sort_order} NULLS LAST LIMIT ? OFFSET ?",
         tuple(params) + (per_page, offset),
     )
 

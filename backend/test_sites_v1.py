@@ -130,9 +130,35 @@ async def test_stats_aggregates():
     print("OK test_stats_aggregates")
 
 
+async def test_default_sort_nulls_last():
+    from db import close_db
+    await close_db()
+    if db_mod.DB_PATH.exists():
+        db_mod.DB_PATH.unlink()
+    db_mod._db = None
+    await init_db()
+    from db import upsert_domain
+    from routers.sites import list_sites
+    # un site avec % mesuré, un site sans (NULL → donnée ancienne non backfillée)
+    await upsert_domain("avecpct.fr", {"score": 5.0, "ad_surface_pct": 30.0, "audit_id": "x"})
+    await upsert_domain("sanspct.fr", {"score": 5.0, "audit_id": "x"})  # pas de ad_surface_pct → NULL
+
+    _defaults = dict(page=1, per_page=100, sort="last_ad_surface_pct", order="desc",
+                     search="", health="", country="", ads_txt="",
+                     score_min=None, score_max=None, category="",
+                     ad_pct_min=None, ad_pct_max=None, stale_days=None)
+    res = await list_sites(**{**_defaults, "user": {"id": "u"}})
+    order = [s["domain"] for s in res["sites"]]
+    # tri par défaut % décroissant : le site avec % doit précéder le site sans donnée (NULL en dernier)
+    assert order.index("avecpct.fr") < order.index("sanspct.fr"), order
+    await close_db()
+    print("OK test_default_sort_nulls_last")
+
+
 if __name__ == "__main__":
     asyncio.run(test_column_added())
     asyncio.run(test_upsert_writes_ad_surface_pct())
     asyncio.run(test_backfill_sets_pct_when_present())
     asyncio.run(test_list_filters_pct_and_stale())
     asyncio.run(test_stats_aggregates())
+    asyncio.run(test_default_sort_nulls_last())
