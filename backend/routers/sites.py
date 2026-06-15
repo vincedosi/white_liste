@@ -10,7 +10,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Body
+from fastapi import APIRouter, Depends, Query, HTTPException, Body, UploadFile, File, Form
 
 from auth import get_current_user
 from config import STALE_DAYS
@@ -54,6 +54,38 @@ _ADTECH_KEYS = [
 
 # Score bucket labels
 _SCORE_BUCKETS = [f"{i}-{i+1}" for i in range(10)]
+
+
+@router.post("/parse-input")
+async def parse_input(
+    text: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    user: dict = Depends(get_current_user),
+):
+    """Extrait des domaines candidats depuis une saisie libre et/ou un fichier
+    CSV/XLSX, filtre les entrées 'domain-like', dédoublonne, puis sépare en
+    nouveaux (`to_scan`) vs déjà présents en base (`duplicates`).
+
+    Ne lance AUCUN scan : le frontend appelle ensuite /api/audit avec `to_scan`.
+    """
+    from services.site_utils import collect_candidates, build_scan_partition
+
+    file_bytes = await file.read() if file is not None else None
+    filename = file.filename if file is not None else None
+
+    if not (text and text.strip()) and not file_bytes:
+        raise HTTPException(400, "Aucune entrée fournie")
+
+    try:
+        candidates = collect_candidates(text, file_bytes, filename)
+    except ValueError:
+        raise HTTPException(400, "Format non supporté (CSV ou XLSX uniquement)")
+    except Exception:
+        raise HTTPException(400, "Fichier illisible")
+
+    rows = await fetch_all("SELECT domain FROM domains")
+    existing = {r["domain"] for r in rows}
+    return build_scan_partition(candidates, existing)
 
 
 @router.get("")
