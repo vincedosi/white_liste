@@ -75,3 +75,66 @@ def build_scan_partition(candidates: list[str], existing: set[str]) -> dict:
         "invalid_count": invalid,
         "total_found": len(valid),
     }
+
+
+import csv as _csv
+import io as _io
+
+_SPLIT_RE = re.compile(r"[\s,;]+")
+
+
+def extract_from_text(text: str) -> list[str]:
+    """Découpe une saisie libre sur retours-ligne, virgules, points-virgules,
+    espaces/tabs."""
+    if not text:
+        return []
+    return [p for p in _SPLIT_RE.split(text) if p]
+
+
+def extract_from_csv(data: bytes) -> list[str]:
+    """Aplatit toutes les cellules non vides d'un CSV (UTF-8, fallback latin-1)."""
+    try:
+        decoded = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        decoded = data.decode("latin-1", errors="ignore")
+    out: list[str] = []
+    for row in _csv.reader(_io.StringIO(decoded)):
+        for cell in row:
+            cell = (cell or "").strip()
+            if cell:
+                out.append(cell)
+    return out
+
+
+def extract_from_xlsx(data: bytes) -> list[str]:
+    """Aplatit toutes les cellules non vides d'un classeur .xlsx."""
+    from openpyxl import load_workbook
+    wb = load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
+    out: list[str] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            for cell in row:
+                if cell is None:
+                    continue
+                s = str(cell).strip()
+                if s:
+                    out.append(s)
+    wb.close()
+    return out
+
+
+def collect_candidates(text, file_bytes, filename) -> list[str]:
+    """Combine la saisie libre et un éventuel fichier (CSV ou XLSX) en une liste
+    brute de candidats. Lève ValueError si le fichier n'est ni .csv ni .xlsx."""
+    out: list[str] = []
+    if text:
+        out.extend(extract_from_text(text))
+    if file_bytes:
+        name = (filename or "").lower()
+        if name.endswith(".csv"):
+            out.extend(extract_from_csv(file_bytes))
+        elif name.endswith(".xlsx"):
+            out.extend(extract_from_xlsx(file_bytes))
+        else:
+            raise ValueError("unsupported_format")
+    return out
