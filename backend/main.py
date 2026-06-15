@@ -47,6 +47,8 @@ async def startup():
     await migrate_json_audits()
     from db import backfill_domains_from_audits
     await backfill_domains_from_audits()
+    from db import backfill_ad_surface_pct
+    await backfill_ad_surface_pct()
     await ensure_default_user_in_all_workspaces()
 
 

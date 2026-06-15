@@ -457,3 +457,47 @@ async def backfill_domains_from_audits() -> None:
     )
     await db.commit()
     print(f"[MLI] Backfilled {backfilled} domains from audit history")
+
+
+async def backfill_ad_surface_pct() -> None:
+    """One-time best-effort backfill of domains.last_ad_surface_pct from stored
+    audit results_json. Reads the ad surface % from each site entry when present;
+    later audits overwrite earlier ones, so the latest value wins. Domains whose
+    audits never carried the value keep NULL (filled forward on next rescan)."""
+    import json as json_mod
+    db = await get_db()
+    already = await fetch_one("SELECT key FROM _migrations WHERE key = ?", ("backfill_ad_pct_v1",))
+    if already:
+        return
+    audits = await fetch_all(
+        "SELECT results_json FROM audits WHERE results_json IS NOT NULL ORDER BY created_at ASC"
+    )
+    for audit_row in audits:
+        try:
+            results = json_mod.loads(audit_row["results_json"])
+        except Exception:
+            continue
+        if not isinstance(results, list):
+            continue
+        for site in results:
+            if not isinstance(site, dict):
+                continue
+            domain_name = site.get("domain", "")
+            if not domain_name:
+                continue
+            att = site.get("attention") if isinstance(site.get("attention"), dict) else {}
+            details = att.get("details") if isinstance(att.get("details"), dict) else {}
+            profile = att.get("page_profile") if isinstance(att.get("page_profile"), dict) else {}
+            pct = details.get("ad_surface_pct")
+            if pct is None:
+                pct = profile.get("total_ad_surface_pct")
+            if pct is None:
+                continue
+            await db.execute(
+                "UPDATE domains SET last_ad_surface_pct = ? WHERE domain = ? AND last_ad_surface_pct IS NULL",
+                (pct, domain_name),
+            )
+    await db.execute(
+        "INSERT INTO _migrations (key, done_at) VALUES (?, ?)", ("backfill_ad_pct_v1", _now())
+    )
+    await db.commit()
