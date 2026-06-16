@@ -67,7 +67,11 @@ def run_playwright_worker(
         "output_dir": output_dir,
     })
 
-    timeout_s = len(domains) * 30 + 120
+    # 90 s/site : couvre la passe de settle agressive (3 cycles) + le retry
+    # non-headless des sites anti-bot. Sinon, sur un gros batch, le worker est
+    # tué avant d'écrire son JSON de sortie (il l'émet en une fois à la fin) ->
+    # tous les résultats perdus (None). cf. scan 40 sites.
+    timeout_s = len(domains) * 90 + 120
 
     proc = subprocess.Popen(
         [sys.executable, "-u", str(WORKER_PATH)],

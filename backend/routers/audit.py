@@ -255,7 +255,7 @@ async def run_audit(
         if use_full_mode:
             yield _log_evt("━━ AUDIT COMPLET (Playwright single-pass) ━━━━")
             yield _log_evt(f"Score + Screenshots en UNE passe pour {len(alive_domains)} domaines")
-            yield _log_evt(f"Timeout configure: {len(alive_domains) * 45 + 120}s")
+            yield _log_evt(f"Timeout configure: {len(alive_domains) * 90 + 120}s")
             yield dict(
                 event="step",
                 data=json.dumps({"step": "attention", "status": "start"}),
