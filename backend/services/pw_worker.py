@@ -1004,6 +1004,30 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
             }}
         }});
 
+        // 1F. Emplacements pub VIDES de taille IAB. Beaucoup de sites rendent
+        // leurs pubs dans des <div> (styled-components, slots) remplis de façon
+        // ASYNCHRONE : au moment de la détection le slot est vide (ni iframe ni
+        // img), donc 1A/1B ne le voient pas — mais la créa arrive avant la
+        // capture (ex: pubs Samsung sur lesechos). Un élément EXACTEMENT de
+        // taille IAB (tol 8) et VIDE (pas de texte ni média) est un slot pub.
+        // Le double critère (taille exacte + vide) écarte les vignettes
+        // éditoriales (qui ont image + texte).
+        document.querySelectorAll('div, ins, aside').forEach(el => {{
+            if (seen.has(el)) return;
+            const rect = el.getBoundingClientRect();
+            const w = Math.round(rect.width), h = Math.round(rect.height);
+            let iabExact = false;
+            for (const [iw, ih] of iabSizes) {{
+                if (Math.abs(w - iw) <= 8 && Math.abs(h - ih) <= 8) {{ iabExact = true; break; }}
+            }}
+            if (!iabExact) return;
+            if ((el.innerText || '').trim().length > 8) return;
+            if (el.querySelector('img, picture, video, canvas, iframe, svg')) return;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') return;
+            addAd(el, 'behavior_empty_iab_slot');
+        }});
+
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // COUCHE 2 : Selectors connus (complement)
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1761,14 +1785,19 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
         net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
         effective_ad_count = max(len(ads), net_est_visual)
 
-        # 13. MLI banner + screenshots
+        # 13. Settle des pubs async + re-highlight + banner + screenshots.
+        # Les régies chargent les créas en LAZY/ASYNC pendant le scroll, et les
+        # slots profonds se remplissent tard. On refait donc un passage de scroll
+        # complet (déclenche les derniers slots), on laisse settle, puis on
+        # ré-encadre (idempotent) juste avant la capture -> boxe les créas
+        # arrivées après le 1er highlighting (sinon non encadrées sur la capture).
+        try:
+            scroll_full_page(page)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
         page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(500)
-
-        # 13b. Re-highlight : le scroll de mesure (clutter) a pu lazy-loader /
-        # rafraîchir des slots pub APRÈS le 1er highlighting -> ces créas
-        # seraient non encadrées sur la capture. Passe idempotente (les pubs
-        # déjà encadrées ne sont pas re-labellisées) pour boxer les nouvelles.
+        page.wait_for_timeout(400)
         try:
             analyze_ads_multi_layer(page, highlight=True)
         except Exception:
