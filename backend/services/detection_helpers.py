@@ -223,6 +223,26 @@ def should_retry_headful(status, currently_headless) -> bool:
     return status == "load_error" and bool(currently_headless)
 
 
+def is_connection_error(msg) -> bool:
+    """Vrai si le message d'exception d'une navigation indique un échec de
+    CONNEXION (la page n'a jamais chargé) : net::ERR_CONNECTION_*,
+    NAME_NOT_RESOLVED, ADDRESS_UNREACHABLE, CONNECTION_REFUSED/CLOSED/RESET,
+    ERR_TIMED_OUT, SSL/CERT… Sert à distinguer un site MORT/injoignable
+    (-> load_error) d'une vraie page (même lente). NB : un timeout Playwright
+    ('Timeout 20000ms exceeded') n'en fait PAS partie (page peut-être lente)."""
+    if not msg:
+        return False
+    m = str(msg).lower()
+    markers = (
+        "err_connection", "err_name_not_resolved", "err_name_resolution_failed",
+        "err_address_unreachable", "err_address_invalid", "err_internet_disconnected",
+        "err_empty_response", "err_socket_not_connected", "err_timed_out",
+        "err_network_changed", "err_ssl", "err_cert", "err_connection_closed",
+        "err_connection_reset", "err_connection_refused", "err_connection_timed_out",
+    )
+    return any(k in m for k in markers)
+
+
 def is_navigation_error_url(url) -> bool:
     """Vrai si l'URL courante de la page est une page d'erreur INTERNE du
     navigateur (échec de navigation : connexion refusée/réinitialisée, timeout…).

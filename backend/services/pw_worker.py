@@ -39,6 +39,7 @@ from detection_helpers import (
     score_from_penalty,
     fullpage_capture_plan,
     is_navigation_error_url,
+    is_connection_error,
     AD_CONTAINER_TOKENS,
     AD_CONTAINER_SUBSTRINGS,
 )
@@ -903,8 +904,12 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                 return;
             }}
 
-            // Large cross-origin iframe (> 200x100) → likely ad
-            if (w >= 200 && h >= 80) {{
+            // Grande iframe cross-origin DANS un conteneur pub → pub. Hors
+            // conteneur pub, une grande iframe cross-origin est presque toujours
+            // un EMBED fonctionnel (carte, formulaire newsletter, vidéo YouTube,
+            // réseau social) — pas une pub. On exige donc inAdContainer pour
+            // éviter les faux positifs (ex: carte datatourisme, form Mailjet).
+            if (w >= 200 && h >= 80 && inAdContainer(iframe)) {{
                 addAd(iframe, 'behavior_crossorigin_iframe');
             }}
         }});
@@ -958,16 +963,18 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
             }}
         }} catch(e) {{}}
 
-        // 1D. Sponsored blocks: large blocks (>200x150) containing only
-        // a linked external image (native ads, sponsored content)
+        // 1D. Blocs natifs / sponsorisés : un bloc image+lien externe, MAIS
+        // seulement avec un SIGNAL de sponsoring réel (régie native connue OU
+        // label « sponsorisé » OU conteneur classé pub). Sinon on encadrait les
+        // cartes ÉDITORIALES qui lient vers un autre domaine (ex: rmc.fr ->
+        // rmc.bfmtv.com, même groupe média) — faux positifs en série.
+        const NATIVE_AD_HOSTS = ['taboola.com','outbrain.com','ligatus.com','plista.com','mgid.com','revcontent.com','adyoulike.com','dable.io','nativery.com','ligadx.com'];
+        const SPONSOR_RX = /(sponsoris|publicit|publi-?r[ée]dac|contenu partenaire|en partenariat|annonceur|\\bpubli\\b|sponsored|advertis)/i;
         document.querySelectorAll('a[href]').forEach(link => {{
             try {{
                 const linkUrl = new URL(link.href, window.location.href);
                 const linkHost = linkUrl.hostname.replace(/^www\\./, '');
-                // Skip same-site, social media, and common non-ad domains
                 if (linkHost === siteDomain || linkHost.endsWith('.' + siteDomain)) return;
-                const skipDomains = ['twitter.com','x.com','facebook.com','instagram.com','youtube.com','linkedin.com','tiktok.com','reddit.com','wikipedia.org','github.com'];
-                if (skipDomains.some(d => linkHost === d || linkHost.endsWith('.' + d))) return;
 
                 const rect = link.getBoundingClientRect();
                 if (rect.width < 200 || rect.height < 150) return;
@@ -982,8 +989,13 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                 }});
                 if (!hasLargeImg) return;
 
-                // Check if the link or its parent is already seen
                 const container = link.closest('div, section, aside, figure') || link;
+                // Signal de sponsoring requis
+                const isNativeAdHost = NATIVE_AD_HOSTS.some(d => linkHost === d || linkHost.endsWith('.' + d));
+                const sig = (container.id || '') + ' ' + (typeof container.className === 'string' ? container.className : '');
+                const labelled = SPONSOR_RX.test((container.innerText || '').slice(0, 300)) || isAdContainerSig(sig);
+                if (!isNativeAdHost && !labelled) return;
+
                 addAd(container, 'behavior_sponsored_block');
             }} catch(e) {{}}
         }});
@@ -1623,24 +1635,28 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
         # 1. Navigate
         _log(f"    [nav] goto {url}...")
         t_start = _time.monotonic()
+        nav_conn_err = False
         try:
             page.goto(url, timeout=20_000, wait_until="load")
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
             _log(f"    [nav] Page chargee en {page_load_time_ms}ms")
         except Exception as nav_err:
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
-            _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms — on continue")
+            nav_conn_err = is_connection_error(str(nav_err))
+            _log(f"    [nav] Echec apres {page_load_time_ms}ms ({'connexion' if nav_conn_err else 'autre/timeout'}) — on continue")
 
-        # 1a-bis. Page d'erreur INTERNE du navigateur (connexion refusée/reset/
-        # timeout) : chrome-error:// n'est jamais une vraie page. En non-headless
-        # Chrome y rend une page d'erreur AVEC du texte qui passerait le garde-fou
-        # de contenu -> faux 10/10. On bascule directement en load_error.
+        # 1a-bis. Page d'erreur navigateur : chrome-error:// (URL) n'est jamais
+        # une vraie page -> load_error direct.
         if is_navigation_error_url(page.url):
             _log(f"    [nav] Page d'erreur navigateur ({page.url}) -> load_error")
             remove_network_listener(page)
             return _load_error_result(domain, {"t": 0, "n": 0}, page_load_time_ms)
 
-        # 1b. Page-load guard — retry once if blank/SPA shell
+        # 1b. Page-load guard — retry si shell SPA vide OU échec de connexion.
+        # (Échec connexion : en non-headless Chrome rend une page d'erreur AVEC
+        # texte qui passerait le garde-fou de contenu -> faux 10/10 sur site mort,
+        # ex: teleobs.com ERR_CONNECTION_CLOSED. On se fie au type d'exception
+        # goto, fiable pour TOUS les net::ERR_, contrairement à page.url.)
         from detection_helpers import is_content_sufficient
         from config import CONTENT_MIN_TEXT, CONTENT_MIN_NODES, NAV_RETRY_TIMEOUT_MS
 
@@ -1654,17 +1670,18 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
 
         page.wait_for_timeout(600)
         _m = _content_metrics()
-        if not is_content_sufficient(_m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
-            _log(f"    [guard] Contenu faible (text={_m['t']} nodes={_m['n']}) — retry networkidle...")
+        if nav_conn_err or not is_content_sufficient(_m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
+            _log(f"    [guard] Contenu faible/echec connexion (text={_m['t']} nodes={_m['n']} conn={nav_conn_err}) — retry networkidle...")
             try:
                 page.goto(url, timeout=NAV_RETRY_TIMEOUT_MS, wait_until="networkidle")
-            except Exception:
-                pass
+                nav_conn_err = False  # le retry a chargé -> plus d'échec connexion
+            except Exception as nav_err2:
+                nav_conn_err = is_connection_error(str(nav_err2))
             page.wait_for_timeout(1500)
             _m = _content_metrics()
-            if is_navigation_error_url(page.url) or not is_content_sufficient(
+            if nav_conn_err or is_navigation_error_url(page.url) or not is_content_sufficient(
                     _m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
-                _log(f"    [guard] Page non chargee (text={_m['t']} nodes={_m['n']} url={page.url}) -> load_error")
+                _log(f"    [guard] Page non chargee (text={_m['t']} nodes={_m['n']} conn={nav_conn_err} url={page.url}) -> load_error")
                 remove_network_listener(page)
                 return _load_error_result(domain, _m, page_load_time_ms)
 
