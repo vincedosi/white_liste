@@ -764,9 +764,10 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
             return false;
         }}
 
-        // Inject highlight styles once if highlighting
-        if (doHighlight) {{
+        // Inject highlight styles once if highlighting (idempotent : re-run OK)
+        if (doHighlight && !document.getElementById('mli-ad-style')) {{
             const style = document.createElement('style');
+            style.id = 'mli-ad-style';
             style.textContent = `
                 .mli-ad-highlight {{
                     outline: 3px solid #E5009A !important;
@@ -828,8 +829,9 @@ def analyze_ads_multi_layer(page, highlight: bool = False) -> list[dict]:
                 method: method,
             }});
 
-            // Highlight inline — no second pass needed
-            if (doHighlight) {{
+            // Highlight inline. Idempotent : on saute les éléments déjà encadrés
+            // (re-passe avant capture pour boxer les pubs lazy-loadées au scroll).
+            if (doHighlight && !el.classList.contains('mli-ad-highlight')) {{
                 let zone = 'FOOTER';
                 if (method === 'interstitial') zone = 'INTERSTIT.';
                 else if (isSticky) zone = 'STICKY';
@@ -1762,6 +1764,15 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
         # 13. MLI banner + screenshots
         page.evaluate("window.scrollTo(0, 0)")
         page.wait_for_timeout(500)
+
+        # 13b. Re-highlight : le scroll de mesure (clutter) a pu lazy-loader /
+        # rafraîchir des slots pub APRÈS le 1er highlighting -> ces créas
+        # seraient non encadrées sur la capture. Passe idempotente (les pubs
+        # déjà encadrées ne sont pas re-labellisées) pour boxer les nouvelles.
+        try:
+            analyze_ads_multi_layer(page, highlight=True)
+        except Exception:
+            pass
 
         atf_pct = round(clutter_detail.get("atf", {}).get("ad_ratio", 0) * 100)
         banner_js = """
