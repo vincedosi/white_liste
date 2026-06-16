@@ -192,6 +192,13 @@ def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
     return bool(iab_match or in_ad_container)
 
 
+def should_retry_headful(status, currently_headless) -> bool:
+    """Vrai si un domaine en `load_error` doit être ré-audité en non-headless.
+    Le navigateur visible débloque souvent les anti-bot (DataDome) et les shells
+    SPA qui refusent le headless. Inutile si on tourne déjà en non-headless."""
+    return status == "load_error" and bool(currently_headless)
+
+
 def is_navigation_error_url(url) -> bool:
     """Vrai si l'URL courante de la page est une page d'erreur INTERNE du
     navigateur (échec de navigation : connexion refusée/réinitialisée, timeout…).

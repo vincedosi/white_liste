@@ -2131,7 +2131,7 @@ def _promote_screenshots(best: dict, domain: str, output_dir: str) -> None:
 def main():
     raw = sys.stdin.read()
     request = json.loads(raw)
-    from detection_helpers import is_suspect_false_negative, pick_best
+    from detection_helpers import is_suspect_false_negative, pick_best, should_retry_headful
 
     domains = request["domains"]
     mode = request.get("mode", "attention")
@@ -2149,7 +2149,19 @@ def main():
             headless=headless,
             args=["--disable-blink-features=AutomationControlled"],
         )
-        headful_browser = None  # lancé paresseusement au 1er site suspect
+        headful_browser = None  # lancé paresseusement (1er load_error ou suspect)
+
+        def _ensure_headful():
+            """Lance le navigateur visible (headless=False) une seule fois."""
+            nonlocal headful_browser
+            if headful_browser is None:
+                _log(f"    [retry] Lancement navigateur visible (headful)...")
+                headful_browser = pw.chromium.launch(
+                    headless=False,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+            return headful_browser
+
         _log(f"[pw_worker] Navigateur pret (contexte frais par domaine)")
 
         for i, domain in enumerate(domains):
@@ -2163,6 +2175,24 @@ def main():
                 if mode == "full":
                     base = full_audit(page, domain, output_dir)
                     base["retry_count"] = 0
+                    # load_error en headless -> re-scan AUTO en non-headless : le
+                    # navigateur visible débloque souvent anti-bot (DataDome) /
+                    # shells SPA (cf lesechos.fr). Capture base => nom canonique.
+                    if should_retry_headful(base.get("status"), headless):
+                        _log(f"    [retry] load_error en headless -> re-scan non-headless")
+                        try:
+                            ch = _new_context(_ensure_headful())
+                            ph = ch.new_page()
+                            hf = full_audit(ph, domain, output_dir)
+                            ch.close()
+                            if hf.get("status") != "load_error":
+                                hf["retry_count"] = 1
+                                base = hf
+                                _log(f"    [retry] non-headless OK (score={hf.get('score')}, {hf.get('dom_ad_count')} pubs)")
+                            else:
+                                _log(f"    [retry] non-headless toujours load_error")
+                        except Exception as e:
+                            _log(f"    [retry] non-headless echec: {str(e)[:80]}")
                     # .get() défensif : _load_error_result n'a pas toutes les clés.
                     suspect = is_suspect_false_negative(
                         (base.get("adtech") or {}).get("scripts_detected"),
@@ -2183,13 +2213,7 @@ def main():
                             _log(f"    [retry] S1 (fr_patient) echec: {str(e)[:80]}")
                         # S2 — headful (navigateur visible lancé une seule fois)
                         try:
-                            if headful_browser is None:
-                                _log(f"    [retry] Lancement navigateur visible (headful)...")
-                                headful_browser = pw.chromium.launch(
-                                    headless=False,
-                                    args=["--disable-blink-features=AutomationControlled"],
-                                )
-                            c2 = _new_context(headful_browser, SCENARIO_HEADFUL)
+                            c2 = _new_context(_ensure_headful(), SCENARIO_HEADFUL)
                             p2 = c2.new_page()
                             candidates.append(full_audit(p2, domain, output_dir, SCENARIO_HEADFUL))
                             c2.close()

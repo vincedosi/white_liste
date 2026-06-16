@@ -8,7 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))            # backend/
 sys.path.insert(0, str(Path(__file__).parent / "services"))  # backend/services/
 
-from detection_helpers import is_suspect_false_negative, visible_ad_score, pick_best
+from detection_helpers import (
+    is_suspect_false_negative, visible_ad_score, pick_best, should_retry_headful,
+)
 
 
 def test_is_suspect_false_negative():
@@ -40,7 +42,20 @@ def test_pick_best_and_score():
     print("OK test_pick_best_and_score")
 
 
+def test_should_retry_headful():
+    # load_error en headless -> on ré-essaie en non-headless
+    assert should_retry_headful("load_error", True) is True
+    assert should_retry_headful("load_error", 1) is True   # truthy
+    # déjà en non-headless -> inutile
+    assert should_retry_headful("load_error", False) is False
+    # page chargée -> pas de retry
+    assert should_retry_headful("ok", True) is False
+    assert should_retry_headful(None, True) is False
+    print("OK test_should_retry_headful")
+
+
 if __name__ == "__main__":
     test_is_suspect_false_negative()
     test_pick_best_and_score()
+    test_should_retry_headful()
     print("ALL OK (rescan)")
