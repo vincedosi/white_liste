@@ -1,0 +1,8 @@
+[
+  {
+    "email": "admin@example.com",
+    "password": "CHANGE_ME_strong_password",
+    "name": "Admin",
+    "role": "admin"
+  }
+]

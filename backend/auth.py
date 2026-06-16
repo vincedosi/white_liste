@@ -69,10 +69,22 @@ async def _get_default_user() -> dict | None:
 
 
 async def get_current_user(request: Request) -> dict:
-    """Auth disabled — always return the default admin user."""
-    user = await _get_default_user()
+    """Authentifie via JWT : header `Authorization: Bearer <token>` ou, pour le
+    SSE (qui ne peut pas toujours poser de header), le query param `?token=`.
+    401 si absent / invalide / expiré."""
+    token = None
+    auth_header = request.headers.get("authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.query_params.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    payload = decode_token(token)  # lève 401 si invalide/expiré
+    user = await fetch_one("SELECT * FROM users WHERE id = ?", (payload.get("sub"),))
     if not user:
-        raise HTTPException(status_code=500, detail="No seed user available")
+        raise HTTPException(status_code=401, detail="User not found")
     return user
 
 

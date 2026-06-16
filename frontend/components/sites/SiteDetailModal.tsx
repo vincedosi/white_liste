@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import type { SiteEntry } from '@/lib/types';
 import { Badge } from '@/components/ui/Badge';
 import { ScoreDonut } from '@/components/ui/ScoreDonut';
+import { fetchWithAuth } from '@/lib/api';
 import Link from 'next/link';
 import { Globe, Loader2, HelpCircle } from 'lucide-react';
 
@@ -55,7 +56,7 @@ export function SiteDetailModal({
   const handleRescan = async () => {
     setRescanning(true);
     try {
-      const res = await fetch(`/api/sites/${encodeURIComponent(site.domain)}/rescan`, { method: 'POST' });
+      const res = await fetchWithAuth(`/api/sites/${encodeURIComponent(site.domain)}/rescan`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (typeof data.score === 'number' || data.score === null) setLiveScore(data.score);
@@ -78,7 +79,7 @@ export function SiteDetailModal({
     if (isNaN(n) || n < 0 || n > 10) return;
     setValidating(true);
     try {
-      const res = await fetch(`/api/sites/${encodeURIComponent(site.domain)}/validate`, {
+      const res = await fetchWithAuth(`/api/sites/${encodeURIComponent(site.domain)}/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ score: n }),

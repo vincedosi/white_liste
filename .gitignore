@@ -20,3 +20,5 @@ backend/output/
 
 output/*.json
 output/*.png
+
+backend/seed.json

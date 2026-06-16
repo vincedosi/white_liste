@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { AuthContext } from './AuthContext';
-import { getMe, getWorkspaces as fetchWorkspaces } from '@/lib/api';
+import {
+  getMe, getWorkspaces as fetchWorkspaces,
+  login as apiLogin, getToken, setToken, clearToken,
+} from '@/lib/api';
 import type { User, Workspace } from '@/lib/types';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -10,6 +14,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
 
   const refreshWorkspaces = useCallback(async () => {
     try {
@@ -18,27 +24,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   }, []);
 
+  // Au montage : si un token existe, on récupère l'utilisateur.
   useEffect(() => {
-    async function loadDefaultUser() {
+    async function load() {
+      if (!getToken()) { setLoading(false); return; }
       try {
         const data = await getMe();
         setUser(data.user);
         setWorkspaces(data.workspaces || []);
-        if (data.workspaces?.length > 0) {
-          setCurrentWorkspace(data.workspaces[0]);
-        }
-      } catch { /* ignore */ }
+        if (data.workspaces?.length > 0) setCurrentWorkspace(data.workspaces[0]);
+      } catch {
+        clearToken();
+      }
       setLoading(false);
     }
-    loadDefaultUser();
+    load();
   }, []);
 
-  const login = async (_email: string, _password: string) => {
-    /* auth disabled */
+  // Garde-fou de routes : pas connecté -> /login ; connecté sur /login -> /sites.
+  useEffect(() => {
+    if (loading) return;
+    if (!user && pathname !== '/login') router.replace('/login');
+    if (user && pathname === '/login') router.replace('/sites');
+  }, [user, loading, pathname, router]);
+
+  const login = async (email: string, password: string) => {
+    const data = await apiLogin(email, password);
+    setToken(data.access_token);
+    const me = await getMe();
+    setUser(me.user);
+    setWorkspaces(me.workspaces || []);
+    if (me.workspaces?.length > 0) setCurrentWorkspace(me.workspaces[0]);
+    router.replace('/sites');
   };
 
   const logout = () => {
-    /* auth disabled */
+    clearToken();
+    setUser(null);
+    setWorkspaces([]);
+    setCurrentWorkspace(null);
+    router.replace('/login');
   };
 
   if (loading) {

@@ -6,24 +6,37 @@ import type { AuditRequest, AuditResult, AuditSummary, LoginResponse, MeResponse
 
 const API_BASE = '/api';
 
-/* ── Token management (no-op stubs, auth disabled) ── */
+/* ── Token management (JWT en localStorage) ── */
+
+const TOKEN_KEY = 'mli-token';
 
 export function getToken(): string | null {
-  return null;
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(TOKEN_KEY);
 }
 
-export function setToken(_token: string): void {
-  /* auth disabled */
+export function setToken(token: string): void {
+  if (typeof window !== 'undefined') window.localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
-  /* auth disabled */
+  if (typeof window !== 'undefined') window.localStorage.removeItem(TOKEN_KEY);
 }
 
-/* ── Fetch (auth disabled) ── */
+/* ── Fetch authentifié : ajoute le Bearer, redirige vers /login sur 401 ── */
 
-async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(url, options);
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> | undefined),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    clearToken();
+    window.location.href = '/login';
+  }
+  return res;
 }
 
 /* ── Auth ── */

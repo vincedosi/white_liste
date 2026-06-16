@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { getSiteStats, categorizeDomains } from '@/lib/api';
+import { getSiteStats, categorizeDomains, fetchWithAuth } from '@/lib/api';
 import type { SiteEntry, SiteStats } from '@/lib/types';
 import { useSitesList, type FilterKey } from '@/hooks/useSitesList';
 import { SitesKpis } from '@/components/sites/SitesKpis';
@@ -59,13 +59,13 @@ export default function SitesPage() {
   const rowAction = async (action: 'rescan' | 'validate' | 'remove', s: SiteEntry) => {
     if (action === 'rescan') {
       markScan([s.id], true);
-      await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
+      await fetchWithAuth(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
       markScan([s.id], false);
       refreshAll();
     } else if (action === 'remove') {
       if (!window.confirm(`Supprimer ${s.domain} du dashboard ?\n(La ligne et ses captures seront effacées.)`)) return;
       markScan([s.id], true);
-      await fetch(`/api/sites/${encodeURIComponent(s.domain)}`, { method: 'DELETE' }).catch(() => {});
+      await fetchWithAuth(`/api/sites/${encodeURIComponent(s.domain)}`, { method: 'DELETE' }).catch(() => {});
       setSelected((prev) => { const n = new Set(prev); n.delete(s.id); return n; });
       refreshAll();
     } else {
@@ -78,7 +78,7 @@ export default function SitesPage() {
     markScan(targets.map((x) => x.id), true);
     setSelected(new Set());
     for (const s of targets) {
-      await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
+      await fetchWithAuth(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
       markScan([s.id], false);
     }
     refreshAll();
@@ -88,7 +88,7 @@ export default function SitesPage() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
     if (!window.confirm(`Supprimer ${ids.length} site(s) du dashboard ?\n(Lignes et captures effacées — irréversible.)`)) return;
-    await fetch('/api/sites/delete', {
+    await fetchWithAuth('/api/sites/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),

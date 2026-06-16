@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import type { AuditRequest } from '@/lib/types';
+import { getToken } from '@/lib/api';
 
 // Direct backend URL — Next.js rewrite proxy buffers SSE, so bypass it.
 // (doit pointer sur le même port que le proxy next.config.js)
@@ -74,6 +75,8 @@ export function useAuditStream(): UseAuditStreamReturn {
     const qs = wsId ? `?workspace_id=${encodeURIComponent(wsId)}` : '';
     xhr.open('POST', `${BACKEND_URL}/audit${qs}`);
     xhr.setRequestHeader('Content-Type', 'application/json');
+    const _token = getToken();
+    if (_token) xhr.setRequestHeader('Authorization', `Bearer ${_token}`);
 
     xhr.onprogress = () => {
       const text = xhr.responseText;
