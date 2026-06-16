@@ -53,9 +53,9 @@ export default function MethodologiePage() {
             <div className="flex items-center gap-4">
               <ScoreDonut value={2.2} size={64} stroke={6} />
               <div>
-                <p className="text-sm font-medium text-on-surface">Détection pub</p>
+                <p className="text-sm font-medium text-on-surface">Propreté pub</p>
                 <p className="font-label text-[11px] text-on-surface-variant mt-1 leading-snug">
-                  Quantité de pub détectée (DOM + réseau). 0 = saturé, 10 = aucune pub.
+                  Propreté côté détection (DOM + réseau). 10 = aucune pub, 0 = saturé.
                 </p>
               </div>
             </div>
@@ -64,9 +64,9 @@ export default function MethodologiePage() {
             <div className="flex items-center gap-4">
               <ScoreDonut value={5.8} size={64} stroke={6} />
               <div>
-                <p className="text-sm font-medium text-on-surface">Encombrement</p>
+                <p className="text-sm font-medium text-on-surface">Aération</p>
                 <p className="font-label text-[11px] text-on-surface-variant mt-1 leading-snug">
-                  Part de l&apos;écran couverte par la pub (surface visible).
+                  Part de l&apos;écran libre de pub. 10 = aéré, 0 = écran couvert.
                 </p>
               </div>
             </div>
@@ -88,33 +88,33 @@ export default function MethodologiePage() {
       {/* ── Calcul ── */}
       <Section title="Détail des calculs">
         <Card>
-          <Label>Encombrement (clutter)</Label>
+          <Label>Aération (encombrement / clutter)</Label>
           <p className="text-[13px] text-on-surface-variant leading-relaxed mb-3">
             On mesure la <strong className="text-on-surface">surface pub visible / surface de l&apos;écran</strong> à 3 positions de scroll, puis on
             pondère : haut de page (ATF) 50 %, milieu 30 %, profondeur 20 %. La surface est l&apos;<strong className="text-on-surface">aire d&apos;union</strong> des
-            zones pub (les chevauchements wrapper/iframe ne comptent qu&apos;une fois), plafonnée à 100 %.
+            zones pub (les chevauchements wrapper/iframe ne comptent qu&apos;une fois), plafonnée à 100 %. Note haute = écran aéré.
           </p>
-          <Formula>encombrement = 10 × (1 − [ ratio_ATF×0.5 + ratio_MID×0.3 + ratio_DEEP×0.2 ])</Formula>
+          <Formula>aération = 10 × (1 − [ ratio_ATF×0.5 + ratio_MID×0.3 + ratio_DEEP×0.2 ])</Formula>
         </Card>
 
         <Card>
-          <Label>Détection pub (v4)</Label>
+          <Label>Propreté pub (détection v4)</Label>
           <p className="text-[13px] text-on-surface-variant leading-relaxed mb-3">
             Combine deux signaux et garde le plus fort : les pubs <strong className="text-on-surface">visibles dans le DOM</strong> et les
             <strong className="text-on-surface"> requêtes pub interceptées sur le réseau</strong> (le réseau est primordial car le DOM sous-compte souvent).
             On ajoute des pénalités pour les scripts ad-tech (Prebid, GPT…) et les formats collants (sticky), puis on convertit en note /10
             (courbe saturante : beaucoup de pub → proche de 0).
           </p>
-          <Formula>pénalité = max(pub_DOM, requêtes_réseau × 0.25) + scripts + sticky → note /10</Formula>
+          <Formula>propreté = 10 − [ max(pub_DOM, requêtes_réseau × 0.25) + scripts + sticky ]</Formula>
         </Card>
 
         <Card>
           <Label>Note finale</Label>
           <p className="text-[13px] text-on-surface-variant leading-relaxed mb-3">
-            On garde la note la <strong className="text-on-surface">plus pénalisante</strong> (la plus basse) entre l&apos;encombrement et la
-            détection pub, après pénalité vidéo (chaque pub vidéo in-stream coûte 1,5 point — plus lourd qu&apos;une bannière).
+            On garde la note la <strong className="text-on-surface">plus pénalisante</strong> (la plus basse) entre l&apos;aération et la
+            propreté pub, après pénalité vidéo (chaque pub vidéo in-stream coûte 1,5 point — plus lourd qu&apos;une bannière).
           </p>
-          <Formula>note_finale = min( encombrement , détection_pub − 1.5 × nb_pubs_vidéo )</Formula>
+          <Formula>note_finale = min( aération , propreté_pub − 1.5 × nb_pubs_vidéo )</Formula>
           <p className="font-label text-[11px] text-on-surface-variant mt-3">
             Seuil <strong className="text-warning">MFA</strong> : note &lt; 4,0 → site « Made For Advertising » (conçu pour la pub).
           </p>

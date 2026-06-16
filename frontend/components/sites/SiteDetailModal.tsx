@@ -154,10 +154,13 @@ export function SiteDetailModal({
             )}
           </div>
           <div className="flex items-end justify-around gap-3">
-            <ScoreDonut value={liveV4} size={78} stroke={7} label="Détection pub" />
-            <ScoreDonut value={liveClutter} size={78} stroke={7} label="Encombrement" />
+            <ScoreDonut value={liveV4} size={78} stroke={7} label="Propreté pub" />
+            <ScoreDonut value={liveClutter} size={78} stroke={7} label="Aération" />
             <ScoreDonut value={score} size={96} stroke={8} label="Note finale" />
           </div>
+          <p className="font-label text-[9px] text-on-surface-variant/60 text-center mt-3">
+            10 = propre · 0 = saturé de pub
+          </p>
         </div>
 
         {/* Santé · Pubs · ads.txt */}

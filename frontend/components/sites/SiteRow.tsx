@@ -48,8 +48,8 @@ export function SiteRow({
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-2.5">
-          <ScoreDonut value={site.last_v4_score} size={32} stroke={3.5} label="Dét." />
-          <ScoreDonut value={site.last_clutter_score} size={32} stroke={3.5} label="Enc." />
+          <ScoreDonut value={site.last_v4_score} size={32} stroke={3.5} label="Propreté" />
+          <ScoreDonut value={site.last_clutter_score} size={32} stroke={3.5} label="Aération" />
           <ScoreDonut value={site.last_score} size={40} stroke={4} label="Note" />
         </div>
       </td>
