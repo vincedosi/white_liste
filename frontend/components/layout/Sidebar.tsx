@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut, Menu, Globe } from 'lucide-react';
+import { LogOut, Menu, Globe, BookOpen } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthContext';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
@@ -11,6 +11,7 @@ import clsx from 'clsx';
 // UX réduite : un seul onglet pour l'instant. On enrichira la nav plus tard.
 const NAV_ITEMS = [
   { href: '/sites', label: 'Sites', icon: Globe },
+  { href: '/methodologie', label: 'Méthodologie', icon: BookOpen },
 ];
 
 export function Sidebar() {
