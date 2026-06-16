@@ -1,0 +1,8 @@
+[MLI] Seeded 2 users from seed.json
+[MLI] Migrated 3 audits into workspace 'Default'
+Migrated 3 audits
+  - NEW: 9 domains (completed)
+  - GAE: 3 domains (completed)
+  - test: 11 domains (completed)
+Workspaces: [('Default', 'default')]
+TEST COMPLETE

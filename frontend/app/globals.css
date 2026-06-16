@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Thème : tokens couleur (canaux RGB, espace-séparés) ───
+   Chaque token est consommé via rgb(var(--c-x) / <alpha-value>) dans
+   tailwind.config.js, donc basculer la classe sur <html> repeint tout l'app.
+   `--hairline` pilote les filets/bordures subtils selon le thème. */
+:root,
+.dark {
+  --c-background: 8 8 8;
+  --c-surface: 8 8 8;
+  --c-surface-dim: 8 8 8;
+  --c-surface-low: 13 13 13;
+  --c-surface-container: 18 18 18;
+  --c-surface-high: 24 24 24;
+  --c-surface-highest: 28 28 28;
+  --c-surface-bright: 26 26 26;
+  --c-primary: 51 157 255;
+  --c-primary-electric: 0 102 255;
+  --c-accent: 0 229 255;
+  --c-secondary: 0 252 64;
+  --c-on-surface: 255 255 255;        /* police blanche */
+  --c-on-surface-variant: 209 213 219;/* gris clair lisible (≈ slate-300) */
+  --c-muted: 191 196 204;
+  --c-dim: 130 135 145;
+  --c-outline: 64 64 64;
+  --c-outline-variant: 42 42 42;
+  --c-danger: 255 113 108;
+  --c-warning: 245 158 11;
+  --c-success: 0 252 64;
+
+  --hairline: 255 255 255;
+  --hairline-strength: 0.06;
+  --glass-bg: 18 18 18;
+  --glass-alpha: 0.4;
+  --scrollbar-track: 13 13 13;
+  --scrollbar-thumb: 64 64 64;
+  --scrollbar-thumb-hover: 96 96 96;
+  color-scheme: dark;
+}
+
+.light {
+  --c-background: 240 243 250;        /* blanc cassé bleuté */
+  --c-surface: 240 243 250;
+  --c-surface-dim: 232 236 245;
+  --c-surface-low: 234 238 247;
+  --c-surface-container: 255 255 255; /* cartes blanches */
+  --c-surface-high: 244 247 252;
+  --c-surface-highest: 248 250 253;
+  --c-surface-bright: 255 255 255;
+  --c-primary: 29 78 216;             /* bleu royal */
+  --c-primary-electric: 37 99 235;
+  --c-accent: 8 145 178;              /* cyan profond, lisible sur blanc */
+  --c-secondary: 22 163 74;
+  --c-on-surface: 15 23 42;           /* encre sombre */
+  --c-on-surface-variant: 71 85 105;  /* slate-600 */
+  --c-muted: 100 116 139;
+  --c-dim: 148 163 184;
+  --c-outline: 203 213 225;
+  --c-outline-variant: 226 232 240;
+  --c-danger: 220 38 38;
+  --c-warning: 217 119 6;
+  --c-success: 22 163 74;
+
+  --hairline: 15 23 42;
+  --hairline-strength: 0.10;
+  --glass-bg: 255 255 255;
+  --glass-alpha: 0.7;
+  --scrollbar-track: 226 232 240;
+  --scrollbar-thumb: 203 213 225;
+  --scrollbar-thumb-hover: 148 163 184;
+  color-scheme: light;
+}
+
+/* ─── Body ─── */
+body {
+  background-color: rgb(var(--c-background));
+  color: rgb(var(--c-on-surface));
+  font-family: 'Manrope', sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: rgb(var(--scrollbar-track)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--scrollbar-thumb)); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--scrollbar-thumb-hover)); }
+
+/* ─── Focus ─── */
+*:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: rgb(var(--c-primary-electric) / 0.18);
+  color: rgb(var(--c-on-surface));
+}
+
+/* ─── Glass card ─── */
+.glass-card {
+  background: rgb(var(--glass-bg) / var(--glass-alpha));
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgb(var(--hairline) / var(--hairline-strength));
+}
+
+/* En clair, on rehausse l'ombre des cartes pour qu'elles se détachent du fond. */
+.light .glass-card {
+  box-shadow: 0 4px 24px -12px rgba(15, 23, 42, 0.18);
+}
+
+/* ─── Compat thème clair pour les filets « white/[…] » ───
+   Les composants utilisent des overlays blancs (bordures, séparateurs, survols)
+   qui disparaîtraient sur fond clair. On les remappe vers l'encre sombre
+   (var(--hairline) = 15 23 42 en clair) pour garder le relief. */
+.light .border-white\/\[0\.03\] { border-color: rgb(var(--hairline) / 0.06); }
+.light .border-white\/\[0\.04\] { border-color: rgb(var(--hairline) / 0.07); }
+.light .border-white\/\[0\.05\] { border-color: rgb(var(--hairline) / 0.08); }
+.light .border-white\/\[0\.06\] { border-color: rgb(var(--hairline) / 0.09); }
+.light .border-white\/\[0\.08\] { border-color: rgb(var(--hairline) / 0.12); }
+.light .border-white\/\[0\.1\]  { border-color: rgb(var(--hairline) / 0.15); }
+
+.light .bg-white\/\[0\.02\] { background-color: rgb(var(--hairline) / 0.03); }
+.light .bg-white\/\[0\.03\] { background-color: rgb(var(--hairline) / 0.04); }
+.light .bg-white\/\[0\.04\] { background-color: rgb(var(--hairline) / 0.05); }
+.light .bg-white\/\[0\.05\] { background-color: rgb(var(--hairline) / 0.06); }
+.light .bg-white\/\[0\.06\] { background-color: rgb(var(--hairline) / 0.07); }
+
+.light .hover\:bg-white\/\[0\.02\]:hover { background-color: rgb(var(--hairline) / 0.04); }
+.light .hover\:bg-white\/\[0\.03\]:hover { background-color: rgb(var(--hairline) / 0.05); }
+.light .hover\:bg-white\/\[0\.04\]:hover { background-color: rgb(var(--hairline) / 0.06); }
+.light .hover\:bg-white\/\[0\.06\]:hover { background-color: rgb(var(--hairline) / 0.07); }
+
+/* ─── Glow utilities ─── */
+.glow-blue {
+  text-shadow: 0 0 40px rgba(0, 102, 255, 0.4);
+}
+
+.glow-cyan {
+  text-shadow: 0 0 40px rgba(0, 229, 255, 0.4);
+}
+
+.glow-card {
+  box-shadow: 0 10px 40px -15px rgba(0, 102, 255, 0.2);
+}
+
+/* ─── Gradient backgrounds ─── */
+.bg-gradient-fluid {
+  background: linear-gradient(135deg, #0066ff, #00e5ff, #00fc40);
+}
+
+.text-gradient-fluid {
+  background: linear-gradient(135deg, #0066ff, #00e5ff, #00fc40);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Dot grid background ─── */
+.dot-grid {
+  background-image: radial-gradient(circle, #2a2a2a 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+}
+
+/* ─── Entrance animations ─── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-right {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 0.4s ease both;
+}
+.animate-scale-in {
+  animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-slide-right {
+  animation: slide-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Stagger delays */
+.delay-1 { animation-delay: 60ms; }
+.delay-2 { animation-delay: 120ms; }
+.delay-3 { animation-delay: 180ms; }
+.delay-4 { animation-delay: 240ms; }
+.delay-5 { animation-delay: 300ms; }
+.delay-6 { animation-delay: 360ms; }
+.delay-7 { animation-delay: 420ms; }
+.delay-8 { animation-delay: 480ms; }
+
+/* ─── Pulse dot ─── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ─── Glow pulse ─── */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 102, 255, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(0, 102, 255, 0.4); }
+}
+.animate-glow {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+/* ─── MapLibre GL overrides ─── */
+.maplibregl-popup-content {
+  background: rgba(18, 18, 18, 0.9) !important;
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 40px -15px rgba(0, 102, 255, 0.2) !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: rgba(18, 18, 18, 0.9) !important;
+}
+
+.maplibregl-popup-close-button {
+  color: #909090 !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+}
+
+.maplibregl-ctrl-group {
+  background: rgba(18, 18, 18, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-radius: 8px !important;
+}
+
+.maplibregl-ctrl-group button {
+  filter: invert(1) !important;
+}
