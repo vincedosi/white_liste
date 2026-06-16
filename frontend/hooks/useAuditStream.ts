@@ -4,7 +4,15 @@ import { useState, useCallback, useRef } from 'react';
 import type { AuditRequest } from '@/lib/types';
 
 // Direct backend URL — Next.js rewrite proxy buffers SSE, so bypass it.
-const BACKEND_URL = 'http://localhost:8020/api';
+// (doit pointer sur le même port que le proxy next.config.js)
+const BACKEND_URL = 'http://localhost:8021/api';
+
+// Étapes d'un audit de site (worker), pour la barre de progression du site courant.
+const SITE_STEPS: [string, number][] = [
+  ['[nav]', 1], ['[cmp]', 2], ['[ads]', 3], ['[scroll]', 4],
+  ['[dom]', 5], ['[score]', 6], ['[clutter]', 7], ['[screenshot]', 8],
+];
+const SITE_STEPS_TOTAL = 8;
 
 export interface AuditStreamState {
   logs: string[];
@@ -13,6 +21,11 @@ export interface AuditStreamState {
   isRunning: boolean;
   error: string | null;
   auditId: string | null;
+  // Progression
+  siteCurrent: number;   // n° du site en cours (1-indexé)
+  siteTotal: number;     // nb total de sites à auditer
+  currentDomain: string; // domaine en cours d'audit
+  siteStepPct: number;   // 0..1 — avancée du scan du site courant
 }
 
 export interface UseAuditStreamReturn extends AuditStreamState {
@@ -26,6 +39,10 @@ export function useAuditStream(): UseAuditStreamReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [auditId, setAuditId] = useState<string | null>(null);
+  const [siteCurrent, setSiteCurrent] = useState(0);
+  const [siteTotal, setSiteTotal] = useState(0);
+  const [currentDomain, setCurrentDomain] = useState('');
+  const [siteStepPct, setSiteStepPct] = useState(0);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
 
   const startAudit = useCallback((request: AuditRequest) => {
@@ -36,6 +53,10 @@ export function useAuditStream(): UseAuditStreamReturn {
     setError(null);
     setAuditId(null);
     setIsRunning(true);
+    setSiteCurrent(0);
+    setCurrentDomain('');
+    setSiteStepPct(0);
+    setSiteTotal(Array.isArray(request.domains) ? request.domains.length : 0);
 
     // Abort any previous request
     if (xhrRef.current) {
@@ -87,12 +108,29 @@ export function useAuditStream(): UseAuditStreamReturn {
 
           switch (currentEvt) {
             case 'log': {
+              let msg = rawData;
               try {
                 const parsed = JSON.parse(rawData);
-                const msg = parsed.message || parsed.msg || rawData;
-                setLogs((prev) => [...prev, msg]);
-              } catch {
-                setLogs((prev) => [...prev, rawData]);
+                msg = parsed.message || parsed.msg || rawData;
+              } catch { /* garde rawData */ }
+              setLogs((prev) => [...prev, msg]);
+
+              // Progression : "[N/total] -- domaine --" = nouveau site
+              const siteMatch = msg.match(/\[(\d+)\/(\d+)\]\s*--\s*(\S+)/);
+              if (siteMatch) {
+                setSiteCurrent(Number(siteMatch[1]));
+                setSiteTotal(Number(siteMatch[2]));
+                setCurrentDomain(siteMatch[3]);
+                setSiteStepPct(0);
+              } else if (msg.includes('[RESULT]')) {
+                setSiteStepPct(1);
+              } else {
+                for (const [tok, ord] of SITE_STEPS) {
+                  if (msg.includes(tok)) {
+                    setSiteStepPct((p) => Math.max(p, ord / SITE_STEPS_TOTAL));
+                    break;
+                  }
+                }
               }
               break;
             }
@@ -164,5 +202,8 @@ export function useAuditStream(): UseAuditStreamReturn {
     xhr.send(JSON.stringify(body));
   }, []);
 
-  return { logs, currentStep, results, isRunning, error, auditId, startAudit };
+  return {
+    logs, currentStep, results, isRunning, error, auditId, startAudit,
+    siteCurrent, siteTotal, currentDomain, siteStepPct,
+  };
 }

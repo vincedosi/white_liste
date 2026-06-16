@@ -19,7 +19,14 @@ export function ScanModal({
   const [phase, setPhase] = useState<'input' | 'running'>('input');
   const [succeeded, setSucceeded] = useState(false);
 
-  const { logs, currentStep, isRunning, error: streamError, startAudit } = useAuditStream();
+  const {
+    logs, currentStep, isRunning, error: streamError, startAudit,
+    siteCurrent, siteTotal, currentDomain, siteStepPct,
+  } = useAuditStream();
+
+  const sitesDone = siteCurrent > 0 ? siteCurrent - 1 + (siteStepPct >= 1 ? 1 : 0) : 0;
+  const sitesPct = siteTotal ? (sitesDone / siteTotal) * 100 : 0;
+  const sitePct = Math.round(siteStepPct * 100);
 
   if (!open) return null;
 
@@ -145,6 +152,29 @@ export function ScanModal({
                 {currentStep && isRunning ? ` · ${currentStep}` : ''}
               </p>
             )}
+
+            {/* Barres de progression : sites + site en cours */}
+            <div className="space-y-3 mb-4">
+              <div>
+                <div className="flex justify-between font-label text-[10px] uppercase tracking-wider text-on-surface-variant mb-1">
+                  <span>Sites scannés</span>
+                  <span>{sitesDone}/{siteTotal || summary?.to_scan.length || 0}</span>
+                </div>
+                <div className="h-2 rounded-full bg-surface-high overflow-hidden">
+                  <div className="h-full bg-accent rounded-full transition-all duration-300 ease-out" style={{ width: `${sitesPct}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between font-label text-[10px] uppercase tracking-wider text-on-surface-variant mb-1">
+                  <span className="truncate max-w-[70%]">{currentDomain || (isRunning ? 'Préparation…' : '—')}</span>
+                  <span>{isRunning ? `${sitePct}%` : ''}</span>
+                </div>
+                <div className="h-2 rounded-full bg-surface-high overflow-hidden">
+                  <div className="h-full bg-primary-electric rounded-full transition-all duration-300 ease-out" style={{ width: `${isRunning ? sitePct : 100}%` }} />
+                </div>
+              </div>
+            </div>
+
             <AuditLog logs={logs} isRunning={isRunning} />
             {streamError && <p className="mt-3 text-sm text-danger">{streamError}</p>}
             <div className="flex gap-3 justify-end mt-6">
