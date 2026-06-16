@@ -17,3 +17,6 @@ backend/data/*.bak-before-wipe
 backend/backend-dev.log
 backend/backend-dev.err.log
 backend/output/
+
+output/*.json
+output/*.png
