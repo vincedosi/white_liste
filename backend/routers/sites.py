@@ -396,3 +396,45 @@ async def validate_site(domain: str, body: dict = Body(...), user: dict = Depend
         (score, now, domain),
     )
     return {"domain": domain, "score": score, "editorial_status": "validated"}
+
+
+def _remove_screenshots(domain: str) -> None:
+    """Supprime les captures viewport/full d'un domaine (best-effort)."""
+    safe = domain.replace(".", "_").replace("/", "_")
+    for suffix in ("_viewport.png", "_full.png"):
+        f = SCREENSHOTS_DIR / f"{safe}{suffix}"
+        try:
+            if f.exists():
+                f.unlink()
+        except OSError:
+            pass
+
+
+@router.delete("/{domain}")
+async def delete_site(domain: str, user: dict = Depends(get_current_user)):
+    """Supprime un site du dash : ligne `domains` + captures associées.
+    (L'historique d'audits dans `audits` n'est pas touché.)"""
+    row = await fetch_one("SELECT id FROM domains WHERE domain = ?", (domain,))
+    if not row:
+        raise HTTPException(404, "Domain not found")
+    await execute("DELETE FROM domains WHERE domain = ?", (domain,))
+    _remove_screenshots(domain)
+    return {"deleted": domain}
+
+
+@router.post("/delete")
+async def delete_sites_bulk(body: dict = Body(...), user: dict = Depends(get_current_user)):
+    """Suppression en masse. Body : `{"ids": [...]}` et/ou `{"domains": [...]}`."""
+    ids = body.get("ids") or []
+    domains = list(body.get("domains") or [])
+    for i in ids:
+        r = await fetch_one("SELECT domain FROM domains WHERE id = ?", (i,))
+        if r:
+            domains.append(r["domain"])
+    domains = list(dict.fromkeys(domains))  # dédoublonne, garde l'ordre
+    if not domains:
+        raise HTTPException(400, "ids or domains required")
+    for d in domains:
+        await execute("DELETE FROM domains WHERE domain = ?", (d,))
+        _remove_screenshots(d)
+    return {"deleted": len(domains), "domains": domains}

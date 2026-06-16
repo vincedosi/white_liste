@@ -63,8 +63,11 @@ export default function SitesPage() {
       markScan([s.id], false);
       refreshAll();
     } else if (action === 'remove') {
-      // Pas d'endpoint de suppression côté backend en V1 — action honnête plutôt que 404 silencieux.
-      alert('La suppression de sites n’est pas encore disponible (V1).');
+      if (!window.confirm(`Supprimer ${s.domain} du dashboard ?\n(La ligne et ses captures seront effacées.)`)) return;
+      markScan([s.id], true);
+      await fetch(`/api/sites/${encodeURIComponent(s.domain)}`, { method: 'DELETE' }).catch(() => {});
+      setSelected((prev) => { const n = new Set(prev); n.delete(s.id); return n; });
+      refreshAll();
     } else {
       setDetail(s); // la validation se fait dans la modale détail existante
     }
@@ -78,6 +81,19 @@ export default function SitesPage() {
       await fetch(`/api/sites/${encodeURIComponent(s.domain)}/rescan`, { method: 'POST' }).catch(() => {});
       markScan([s.id], false);
     }
+    refreshAll();
+  };
+
+  const bulkRemove = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Supprimer ${ids.length} site(s) du dashboard ?\n(Lignes et captures effacées — irréversible.)`)) return;
+    await fetch('/api/sites/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    }).catch(() => {});
+    setSelected(new Set());
     refreshAll();
   };
 
@@ -145,7 +161,7 @@ export default function SitesPage() {
         count={selected.size}
         onRescan={bulkRescan}
         onCategorize={() => setShowCat(true)}
-        onRemove={() => alert('La suppression de sites n’est pas encore disponible (V1).')}
+        onRemove={bulkRemove}
         onClear={() => setSelected(new Set())}
       />
 
