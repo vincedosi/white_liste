@@ -1785,23 +1785,24 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
         net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
         effective_ad_count = max(len(ads), net_est_visual)
 
-        # 13. Settle des pubs async + re-highlight + banner + screenshots.
-        # Les régies chargent les créas en LAZY/ASYNC pendant le scroll, et les
-        # slots profonds se remplissent tard. On refait donc un passage de scroll
-        # complet (déclenche les derniers slots), on laisse settle, puis on
-        # ré-encadre (idempotent) juste avant la capture -> boxe les créas
-        # arrivées après le 1er highlighting (sinon non encadrées sur la capture).
-        try:
-            scroll_full_page(page)
-        except Exception:
-            pass
-        page.wait_for_timeout(1500)
-        page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(400)
-        try:
-            analyze_ads_multi_layer(page, highlight=True)
-        except Exception:
-            pass
+        # 13. Settle AGRESSIF des pubs async + re-highlight + banner + screenshots.
+        # Les régies chargent/rafraîchissent les créas en LAZY/ASYNC : un seul
+        # passage rate les slots profonds chargés tard. On fait donc PLUSIEURS
+        # cycles scroll-complet -> settle -> ré-encadrement (idempotent), pour
+        # accumuler le boxing des créas qui arrivent au fil du temps, puis on
+        # capture. Coût ~ +8-10 s, réservé aux sites où ça compte.
+        for _pass in range(3):
+            try:
+                scroll_full_page(page)
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+            page.evaluate("window.scrollTo(0, 0)")
+            page.wait_for_timeout(300)
+            try:
+                analyze_ads_multi_layer(page, highlight=True)
+            except Exception:
+                pass
 
         atf_pct = round(clutter_detail.get("atf", {}).get("ad_ratio", 0) * 100)
         banner_js = """
