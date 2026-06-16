@@ -3,16 +3,10 @@
 import { useState, useMemo } from 'react';
 import type { SiteEntry } from '@/lib/types';
 import { Badge } from '@/components/ui/Badge';
+import { ScoreDonut } from '@/components/ui/ScoreDonut';
 import { Globe, Loader2 } from 'lucide-react';
 
 /* ── helpers ── */
-
-function scoreColor(score: number | null): string {
-  if (score == null) return 'text-on-surface-variant/40';
-  if (score >= 7) return 'text-success';
-  if (score >= 4) return 'text-warning';
-  return 'text-danger';
-}
 
 function healthVariant(h: string | null): 'ok' | 'dead' | 'mfa' | 'flag' | 'present' | 'absent' {
   if (!h) return 'absent';
@@ -48,6 +42,8 @@ export function SiteDetailModal({
   const [rescanning, setRescanning] = useState(false);
   const [bust, setBust] = useState(0);
   const [liveScore, setLiveScore] = useState<number | null>(site.last_score);
+  const [liveClutter, setLiveClutter] = useState<number | null>(site.last_clutter_score);
+  const [liveV4, setLiveV4] = useState<number | null>(site.last_v4_score);
   const [liveStatus, setLiveStatus] = useState<string>(site.editorial_status);
   const [noteInput, setNoteInput] = useState('');
   const [validating, setValidating] = useState(false);
@@ -62,6 +58,8 @@ export function SiteDetailModal({
       if (res.ok) {
         const data = await res.json();
         if (typeof data.score === 'number' || data.score === null) setLiveScore(data.score);
+        if (data.clutter_score !== undefined) setLiveClutter(data.clutter_score);
+        if (data.v4_score !== undefined) setLiveV4(data.v4_score);
         if (data.editorial_status) setLiveStatus(data.editorial_status);
         setImgError(false);
         setShowFull(false);
@@ -136,18 +134,23 @@ export function SiteDetailModal({
           </div>
         </div>
 
-        {/* 2×2 metric grid */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-surface-high rounded-xl p-4">
-            <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-2">Score</p>
-            {toReview ? (
-              <span className="text-lg font-label uppercase tracking-wider text-warning">À valider</span>
-            ) : (
-              <span className={`text-3xl font-extralight tracking-tighter ${scoreColor(score)}`}>
-                {score != null ? score.toFixed(1) : '—'}
-              </span>
+        {/* Les 3 notes /10 en donut (rouge = mauvais → vert = bon) */}
+        <div className="bg-surface-high rounded-xl p-5 mb-3">
+          <div className="flex items-center justify-between mb-4">
+            <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant">Notes /10</p>
+            {toReview && (
+              <span className="font-label text-[10px] uppercase tracking-wider text-warning">À valider</span>
             )}
           </div>
+          <div className="flex items-end justify-around gap-3">
+            <ScoreDonut value={liveV4} size={78} stroke={7} label="Détection pub" />
+            <ScoreDonut value={liveClutter} size={78} stroke={7} label="Encombrement" />
+            <ScoreDonut value={score} size={96} stroke={8} label="Note finale" />
+          </div>
+        </div>
+
+        {/* Santé · Pubs · ads.txt */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="bg-surface-high rounded-xl p-4">
             <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant mb-2">Sante</p>
             <Badge variant={healthVariant(site.last_health)}>

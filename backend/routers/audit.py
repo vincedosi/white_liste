@@ -611,6 +611,8 @@ async def run_audit(
                     # Garde-fou : ad-tech présent mais 0 requête pub réseau -> 'to_review' (cf. db._editorial_status_after_audit)
                     "suspect_blocked": (_attention.get("details") or {}).get("suspect_blocked", False),
                     "ad_surface_pct": (_attention.get("details") or {}).get("ad_surface_pct"),
+                    "clutter_score": (_attention.get("details") or {}).get("clutter_score"),
+                    "v4_score": (_attention.get("details") or {}).get("v4_score"),
                     "country": _geo.get("server_country") if isinstance(_geo, dict) else None,
                     "lang": _geo.get("content_lang") if isinstance(_geo, dict) else None,
                     "tld": _geo.get("tld") if isinstance(_geo, dict) else None,

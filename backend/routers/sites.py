@@ -356,19 +356,23 @@ async def rescan_site(domain: str, user: dict = Depends(get_current_user)):
     #  - garde-fou : ad-tech présent mais 0 requête pub réseau (chargement bloqué).
     suspect_blocked = bool((ar.details or {}).get("suspect_blocked")) if ar else False
     status = "to_review" if (not ad_count or suspect_blocked) else "pending"
+    clutter_score = (ar.details or {}).get("clutter_score") if ar else None
+    v4_score = (ar.details or {}).get("v4_score") if ar else None
 
     await execute(
         """UPDATE domains SET
             last_score = ?, last_ad_surface_pct = ?, last_ad_count = ?, last_adtech_json = ?,
             last_trackers = ?, last_lang = ?, last_audit_date = ?,
+            last_clutter_score = ?, last_v4_score = ?,
             editorial_status = ?, audit_count = audit_count + 1, updated_at = ?
            WHERE domain = ?""",
         (
             score, ad_surface_pct, ad_count, json.dumps(adtech) if adtech else None,
-            trackers_total, lang, now, status, now, domain,
+            trackers_total, lang, now, clutter_score, v4_score, status, now, domain,
         ),
     )
     return {"domain": domain, "score": score, "ad_count": ad_count,
+            "clutter_score": clutter_score, "v4_score": v4_score,
             "editorial_status": status, "rescanned_at": now}
 
 

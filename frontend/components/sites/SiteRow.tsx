@@ -1,6 +1,7 @@
 'use client';
 import { Globe, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { ScoreDonut } from '@/components/ui/ScoreDonut';
 import { AdAreaBar } from './AdAreaBar';
 import { SiteKebabMenu } from './SiteKebabMenu';
 import type { SiteEntry } from '@/lib/types';
@@ -44,6 +45,9 @@ export function SiteRow({
             <div className="font-medium text-sm text-on-surface truncate">{site.domain}</div>
           </div>
         </div>
+      </td>
+      <td className="px-3 py-3">
+        <ScoreDonut value={site.last_score} size={38} stroke={4} />
       </td>
       <td className="px-3 py-3 w-[280px]">
         <AdAreaBar pct={site.last_ad_surface_pct} trend={site.last_score_trend} />

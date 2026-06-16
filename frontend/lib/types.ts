@@ -313,6 +313,8 @@ export interface SiteEntry {
   tags: string[];
   adtech: Record<string, boolean>;
   last_score: number | null;
+  last_clutter_score: number | null;
+  last_v4_score: number | null;
   last_score_trend: 'up' | 'down' | 'stable' | null;
   last_ad_surface_pct: number | null;
   last_health: string | null;

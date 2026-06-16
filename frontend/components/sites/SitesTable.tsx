@@ -6,6 +6,7 @@ import type { SiteEntry } from '@/lib/types';
 
 const COLS: { key: string; label: string; sortable: boolean }[] = [
   { key: 'domain', label: 'Site', sortable: true },
+  { key: 'last_score', label: 'Note', sortable: true },
   { key: 'last_ad_surface_pct', label: '% Aire pub', sortable: true },
   { key: 'last_ad_count', label: 'Pubs', sortable: true },
   { key: 'last_health', label: 'Santé', sortable: true },

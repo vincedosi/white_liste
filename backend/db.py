@@ -160,6 +160,8 @@ async def _ensure_domain_columns() -> None:
     existing = {r[1] for r in await cur.fetchall()}
     additions = {
         "last_ad_surface_pct": "REAL",
+        "last_clutter_score": "REAL",
+        "last_v4_score": "REAL",
     }
     for col, decl in additions.items():
         if col not in existing:
@@ -336,6 +338,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
                 last_ads_txt = ?, last_ad_count = ?, last_load_time_ms = ?,
                 last_trackers = ?, last_adtech_json = ?,
                 last_country = ?, last_lang = ?, last_tld = ?,
+                last_clutter_score = ?, last_v4_score = ?,
                 last_audit_id = ?, last_audit_date = ?, editorial_status = ?,
                 audit_count = audit_count + 1, updated_at = ?
             WHERE id = ?""",
@@ -345,6 +348,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
                 audit_data.get("country"), audit_data.get("lang"), audit_data.get("tld"),
+                audit_data.get("clutter_score"), audit_data.get("v4_score"),
                 audit_data.get("audit_id"), audit_data.get("audit_date"), editorial_status,
                 now, existing["id"],
             ),
@@ -355,9 +359,9 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
             """INSERT INTO domains
             (id, domain, editorial_status, last_score, last_score_trend, last_ad_surface_pct, last_health,
              last_ads_txt, last_ad_count, last_load_time_ms, last_trackers, last_adtech_json,
-             last_country, last_lang, last_tld, last_audit_id, last_audit_date,
+             last_country, last_lang, last_tld, last_clutter_score, last_v4_score, last_audit_id, last_audit_date,
              audit_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            VALUES (?, ?, ?, ?, 'stable', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
             (
                 _uuid(), domain_name, editorial_status, new_score, audit_data.get("ad_surface_pct"),
                 audit_data.get("health"),
@@ -365,6 +369,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
                 audit_data.get("load_time_ms"), audit_data.get("trackers"),
                 json_mod.dumps(audit_data.get("adtech")) if audit_data.get("adtech") else None,
                 audit_data.get("country"), audit_data.get("lang"), audit_data.get("tld"),
+                audit_data.get("clutter_score"), audit_data.get("v4_score"),
                 audit_data.get("audit_id"), audit_data.get("audit_date"),
                 now, now,
             ),

@@ -1818,6 +1818,7 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
             "interstitials": interstitials,
             "score": final_score,
             "clutter_score": clutter_score,
+            "v4_score": v4_with_video,
             "attention_score": final_score,
             "is_mfa": final_score < 4.0,
             "video_units": video_units,
