@@ -38,6 +38,7 @@ from detection_helpers import (
     dedup_nested_ads,
     score_from_penalty,
     fullpage_capture_plan,
+    is_navigation_error_url,
     AD_CONTAINER_TOKENS,
     AD_CONTAINER_SUBSTRINGS,
 )
@@ -1581,6 +1582,15 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
             page_load_time_ms = int((_time.monotonic() - t_start) * 1000)
             _log(f"    [nav] Timeout/erreur apres {page_load_time_ms}ms — on continue")
 
+        # 1a-bis. Page d'erreur INTERNE du navigateur (connexion refusée/reset/
+        # timeout) : chrome-error:// n'est jamais une vraie page. En non-headless
+        # Chrome y rend une page d'erreur AVEC du texte qui passerait le garde-fou
+        # de contenu -> faux 10/10. On bascule directement en load_error.
+        if is_navigation_error_url(page.url):
+            _log(f"    [nav] Page d'erreur navigateur ({page.url}) -> load_error")
+            remove_network_listener(page)
+            return _load_error_result(domain, {"t": 0, "n": 0}, page_load_time_ms)
+
         # 1b. Page-load guard — retry once if blank/SPA shell
         from detection_helpers import is_content_sufficient
         from config import CONTENT_MIN_TEXT, CONTENT_MIN_NODES, NAV_RETRY_TIMEOUT_MS
@@ -1603,8 +1613,9 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
                 pass
             page.wait_for_timeout(1500)
             _m = _content_metrics()
-            if not is_content_sufficient(_m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
-                _log(f"    [guard] Page non chargee (text={_m['t']} nodes={_m['n']}) -> load_error")
+            if is_navigation_error_url(page.url) or not is_content_sufficient(
+                    _m["t"], _m["n"], CONTENT_MIN_TEXT, CONTENT_MIN_NODES):
+                _log(f"    [guard] Page non chargee (text={_m['t']} nodes={_m['n']} url={page.url}) -> load_error")
                 remove_network_listener(page)
                 return _load_error_result(domain, _m, page_load_time_ms)
 

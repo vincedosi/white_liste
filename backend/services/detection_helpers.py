@@ -192,6 +192,15 @@ def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
     return bool(iab_match or in_ad_container)
 
 
+def is_navigation_error_url(url) -> bool:
+    """Vrai si l'URL courante de la page est une page d'erreur INTERNE du
+    navigateur (échec de navigation : connexion refusée/réinitialisée, timeout…).
+    `chrome-error://` n'est jamais une vraie page : en non-headless Chrome y rend
+    une page d'erreur AVEC texte qui tromperait le garde-fou de contenu → faux
+    10/10. La détecter permet de basculer en load_error."""
+    return bool(url) and str(url).startswith("chrome-error://")
+
+
 def fullpage_capture_plan(scroll_height, full_threshold: int = 12000,
                           max_px: int = 20000) -> tuple:
     """Plan de capture pleine page. `<= full_threshold` → `("full", h)` :
