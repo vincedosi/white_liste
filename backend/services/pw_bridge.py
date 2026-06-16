@@ -46,6 +46,12 @@ def _read_stderr(stream):
 _stdout_chunks: list[str] = []
 _stdout_lock = threading.Lock()
 
+# Sérialisation : un SEUL worker Playwright à la fois par process backend.
+# Les buffers `_stdout_chunks` / `_current_logs` sont des globaux partagés : deux
+# runs concurrents mélangeaient leurs sorties -> JSON illisible -> résultats
+# perdus (None). cf. scan 40 sites. Les appels concurrents attendent leur tour.
+_worker_lock = threading.Lock()
+
 
 def _read_stdout(stream):
     """Background thread: read stdout to avoid pipe deadlock."""
@@ -73,51 +79,54 @@ def run_playwright_worker(
     # tous les résultats perdus (None). cf. scan 40 sites.
     timeout_s = len(domains) * 90 + 120
 
-    proc = subprocess.Popen(
-        [sys.executable, "-u", str(WORKER_PATH)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    # Un seul worker à la fois (cf. _worker_lock) : sinon les globaux stdout/logs
+    # se mélangent entre runs concurrents. Les autres scans attendent ici leur tour.
+    with _worker_lock:
+        proc = subprocess.Popen(
+            [sys.executable, "-u", str(WORKER_PATH)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
 
-    # Read stderr (logs) and stdout (JSON result) in background threads
-    # to avoid pipe buffer deadlock
-    stderr_thread = threading.Thread(target=_read_stderr, args=(proc.stderr,), daemon=True)
-    stderr_thread.start()
+        # Read stderr (logs) and stdout (JSON result) in background threads
+        # to avoid pipe buffer deadlock
+        stderr_thread = threading.Thread(target=_read_stderr, args=(proc.stderr,), daemon=True)
+        stderr_thread.start()
 
-    with _stdout_lock:
-        _stdout_chunks.clear()
-    stdout_thread = threading.Thread(target=_read_stdout, args=(proc.stdout,), daemon=True)
-    stdout_thread.start()
+        with _stdout_lock:
+            _stdout_chunks.clear()
+        stdout_thread = threading.Thread(target=_read_stdout, args=(proc.stdout,), daemon=True)
+        stdout_thread.start()
 
-    # Send request to stdin
-    proc.stdin.write(request)
-    proc.stdin.close()
+        # Send request to stdin
+        proc.stdin.write(request)
+        proc.stdin.close()
 
-    # Wait for process with timeout
-    try:
-        proc.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-        raise RuntimeError(f"Playwright worker timeout after {timeout_s}s")
+        # Wait for process with timeout
+        try:
+            proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise RuntimeError(f"Playwright worker timeout after {timeout_s}s")
 
-    # Wait for reader threads
-    stderr_thread.join(timeout=5)
-    stdout_thread.join(timeout=5)
+        # Wait for reader threads
+        stderr_thread.join(timeout=5)
+        stdout_thread.join(timeout=5)
 
-    with _stdout_lock:
-        stdout = "".join(_stdout_chunks)
+        with _stdout_lock:
+            stdout = "".join(_stdout_chunks)
 
-    if proc.returncode != 0:
-        remaining = get_and_clear_logs()
-        error_msg = "\n".join(remaining[-10:]) if remaining else "Unknown error"
-        raise RuntimeError(f"Playwright worker failed (rc={proc.returncode}): {error_msg}")
+        if proc.returncode != 0:
+            remaining = get_and_clear_logs()
+            error_msg = "\n".join(remaining[-10:]) if remaining else "Unknown error"
+            raise RuntimeError(f"Playwright worker failed (rc={proc.returncode}): {error_msg}")
 
-    return json.loads(stdout)
+        return json.loads(stdout)
 
 
 def score_all_subprocess(
