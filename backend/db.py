@@ -293,15 +293,17 @@ async def migrate_json_audits() -> None:
     print(f"[MLI] Migrated {imported} audits into workspace 'Default'")
 
 
-def _editorial_status_after_audit(prev_status: str | None, suspect_blocked: bool) -> str:
+def _editorial_status_after_audit(prev_status: str | None, suspect_blocked: bool,
+                                  no_note: bool = False) -> str:
     """Décide l'editorial_status après un audit.
     - Ne JAMAIS écraser une validation humaine ('validated').
-    - Garde-fou : si la page a de l'ad-tech mais 0 requête pub réseau (suspect_blocked),
-      le score 'propre' n'est pas fiable -> 'to_review' (cf. is_suspect_blocked dans pw_worker).
+    - `no_note` : aucune pub visible -> pas de note (score=None) -> 'to_review'
+      (vérif manuelle ; règle « pas de pub = pas de note »).
+    - Garde-fou : ad-tech mais 0 requête pub réseau (suspect_blocked) -> 'to_review'.
     - Sinon, on conserve le statut précédent (par défaut 'pending')."""
     if prev_status == "validated":
         return "validated"
-    if suspect_blocked:
+    if suspect_blocked or no_note:
         return "to_review"
     return prev_status or "pending"
 
@@ -316,6 +318,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
 
     new_score = audit_data.get("score")
     suspect_blocked = bool(audit_data.get("suspect_blocked"))
+    no_note = bool(audit_data.get("no_visible_ad"))
     now = _now()
 
     if existing:
@@ -330,7 +333,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
             trend = "stable"
 
         editorial_status = _editorial_status_after_audit(
-            existing["editorial_status"], suspect_blocked
+            existing["editorial_status"], suspect_blocked, no_note
         )
         await db.execute(
             """UPDATE domains SET
@@ -354,7 +357,7 @@ async def upsert_domain(domain_name: str, audit_data: dict) -> None:
             ),
         )
     else:
-        editorial_status = "to_review" if suspect_blocked else "pending"
+        editorial_status = "to_review" if (suspect_blocked or no_note) else "pending"
         await db.execute(
             """INSERT INTO domains
             (id, domain, editorial_status, last_score, last_score_trend, last_ad_surface_pct, last_health,

@@ -156,6 +156,7 @@ def score_all_subprocess(
                 "ad_surface_pct": (data.get("page_profile") or {}).get("total_ad_surface_pct"),
                 "clutter_score": data.get("clutter_score"),
                 "v4_score": data.get("v4_score"),
+                "no_visible_ad": data.get("no_visible_ad"),
             },
             error=data.get("error"),
         )
@@ -200,6 +201,7 @@ def full_audit_subprocess(
                 "ad_surface_pct": (data.get("page_profile") or {}).get("total_ad_surface_pct"),
                 "clutter_score": data.get("clutter_score"),
                 "v4_score": data.get("v4_score"),
+                "no_visible_ad": data.get("no_visible_ad"),
             },
             error=data.get("error"),
         )

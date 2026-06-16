@@ -613,6 +613,7 @@ async def run_audit(
                     "ad_surface_pct": (_attention.get("details") or {}).get("ad_surface_pct"),
                     "clutter_score": (_attention.get("details") or {}).get("clutter_score"),
                     "v4_score": (_attention.get("details") or {}).get("v4_score"),
+                    "no_visible_ad": (_attention.get("details") or {}).get("no_visible_ad"),
                     "country": _geo.get("server_country") if isinstance(_geo, dict) else None,
                     "lang": _geo.get("content_lang") if isinstance(_geo, dict) else None,
                     "tld": _geo.get("tld") if isinstance(_geo, dict) else None,

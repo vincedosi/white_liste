@@ -1796,6 +1796,17 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
         net_est_visual = round(net_visual_ct / 3) if net_visual_ct > 0 else 0
         effective_ad_count = max(len(ads), net_est_visual)
 
+        # Règle produit : PAS DE PUB VISIBLE -> PAS DE NOTE. Une note fondée
+        # uniquement sur le réseau (ad-tech présent mais aucune créa rendue au
+        # bot) n'est pas fiable. Si rien n'est encadré (0 élément DOM) ET ~0% de
+        # surface pub, on NE NOTE PAS : score=None -> le site passe "à valider"
+        # (vérif manuelle de la capture), au lieu d'une note réseau trompeuse.
+        surface_pct = (page_profile or {}).get("total_ad_surface_pct", 0) or 0
+        no_visible_ad = (len(ads) == 0 and surface_pct < 0.5)
+        if no_visible_ad:
+            final_score = None
+            _log(f"    [score] 0 pub visible (surf={surface_pct}%) -> pas de note (a valider)")
+
         # 13. Settle AGRESSIF des pubs async + re-highlight + banner + screenshots.
         # Les régies chargent/rafraîchissent les créas en LAZY/ASYNC : un seul
         # passage rate les slots profonds chargés tard. On fait donc PLUSIEURS
@@ -1895,7 +1906,8 @@ def full_audit(page, domain: str, output_dir: str, scenario: dict | None = None)
             "clutter_score": clutter_score,
             "v4_score": v4_with_video,
             "attention_score": final_score,
-            "is_mfa": final_score < 4.0,
+            "is_mfa": (final_score is not None and final_score < 4.0),
+            "no_visible_ad": no_visible_ad,
             "video_units": video_units,
             "video_signals": video_signals,
             "clutter_detail": clutter_detail,

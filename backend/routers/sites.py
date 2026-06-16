@@ -355,7 +355,9 @@ async def rescan_site(domain: str, user: dict = Depends(get_current_user)):
     #  - 0 pub détectée (on n'a probablement PAS vu les pubs), OU
     #  - garde-fou : ad-tech présent mais 0 requête pub réseau (chargement bloqué).
     suspect_blocked = bool((ar.details or {}).get("suspect_blocked")) if ar else False
-    status = "to_review" if (not ad_count or suspect_blocked) else "pending"
+    no_visible_ad = bool((ar.details or {}).get("no_visible_ad")) if ar else False
+    # Pas de pub visible -> pas de note (score=None déjà) -> à valider.
+    status = "to_review" if (no_visible_ad or not ad_count or suspect_blocked) else "pending"
     clutter_score = (ar.details or {}).get("clutter_score") if ar else None
     v4_score = (ar.details or {}).get("v4_score") if ar else None
 
