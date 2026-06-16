@@ -192,6 +192,30 @@ def is_friendly_iframe_ad(width, height, src, in_ad_container, iab_match,
     return bool(iab_match or in_ad_container)
 
 
+def rect_union_area(rects) -> float:
+    """Aire de l'UNION de rectangles `(x1, y1, x2, y2)` — les chevauchements
+    ne sont comptés qu'une fois. Évite le sur-comptage de surface pub quand un
+    wrapper, son iframe enfant et des doublons couvrent la même zone (sinon
+    surface > viewport → ratio > 100 %). Compression de coordonnées, O(n²)."""
+    boxes = [r for r in rects if r[2] > r[0] and r[3] > r[1]]
+    if not boxes:
+        return 0.0
+    xs = sorted({r[0] for r in boxes} | {r[2] for r in boxes})
+    ys = sorted({r[1] for r in boxes} | {r[3] for r in boxes})
+    area = 0.0
+    for i in range(len(xs) - 1):
+        x1, x2 = xs[i], xs[i + 1]
+        cx = (x1 + x2) / 2
+        for j in range(len(ys) - 1):
+            y1, y2 = ys[j], ys[j + 1]
+            cy = (y1 + y2) / 2
+            for r in boxes:
+                if r[0] <= cx <= r[2] and r[1] <= cy <= r[3]:
+                    area += (x2 - x1) * (y2 - y1)
+                    break
+    return area
+
+
 def should_retry_headful(status, currently_headless) -> bool:
     """Vrai si un domaine en `load_error` doit être ré-audité en non-headless.
     Le navigateur visible débloque souvent les anti-bot (DataDome) et les shells

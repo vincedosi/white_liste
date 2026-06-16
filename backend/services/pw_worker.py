@@ -1197,6 +1197,27 @@ CLUTTER_MEASURE_JS = """
     const viewportArea = vw * vh;
     const viewportTop = window.scrollY;
 
+    // Aire de l'UNION de rectangles [x1,y1,x2,y2] (chevauchements comptés 1 fois).
+    // Mirror de detection_helpers.rect_union_area — évite que wrapper+iframe+
+    // doublons gonflent la surface pub au-delà du viewport (ratio > 100%).
+    function rectUnionArea(rects) {
+        const boxes = rects.filter(r => r[2] > r[0] && r[3] > r[1]);
+        if (!boxes.length) return 0;
+        const xs = [...new Set(boxes.flatMap(r => [r[0], r[2]]))].sort((a, b) => a - b);
+        const ys = [...new Set(boxes.flatMap(r => [r[1], r[3]]))].sort((a, b) => a - b);
+        let area = 0;
+        for (let i = 0; i < xs.length - 1; i++) {
+            const x1 = xs[i], x2 = xs[i + 1], cx = (x1 + x2) / 2;
+            for (let j = 0; j < ys.length - 1; j++) {
+                const y1 = ys[j], y2 = ys[j + 1], cy = (y1 + y2) / 2;
+                if (boxes.some(r => r[0] <= cx && cx <= r[2] && r[1] <= cy && cy <= r[3])) {
+                    area += (x2 - x1) * (y2 - y1);
+                }
+            }
+        }
+        return area;
+    }
+
     const adElements = new Set();
 
     // A. Known ad selectors
@@ -1240,9 +1261,9 @@ CLUTTER_MEASURE_JS = """
     // D. Elements already highlighted by MLI detection
     document.querySelectorAll('.mli-ad-highlight').forEach(el => adElements.add(el));
 
-    // Compute visible ad surface in current viewport
-    let adSurfaceInViewport = 0;
+    // Compute visible ad surface in current viewport (UNION, pas somme)
     const adsInViewport = [];
+    const adRects = [];
 
     adElements.forEach(el => {
         const rect = el.getBoundingClientRect();
@@ -1257,19 +1278,21 @@ CLUTTER_MEASURE_JS = """
         const visibleRight = Math.min(rect.right, vw);
 
         if (visibleTop < visibleBottom && visibleLeft < visibleRight) {
-            const visibleArea = (visibleRight - visibleLeft) * (visibleBottom - visibleTop);
-            adSurfaceInViewport += visibleArea;
+            adRects.push([visibleLeft, visibleTop, visibleRight, visibleBottom]);
 
             adsInViewport.push({
                 width: Math.round(rect.width),
                 height: Math.round(rect.height),
-                visibleArea: Math.round(visibleArea),
+                visibleArea: Math.round((visibleRight - visibleLeft) * (visibleBottom - visibleTop)),
                 y: Math.round(rect.top + viewportTop),
                 isSticky: style.position === 'fixed' || style.position === 'sticky',
                 tag: el.tagName.toLowerCase(),
             });
         }
     });
+
+    // Union des rectangles pub : chevauchements (wrapper+iframe+doublons) comptés 1 fois.
+    const adSurfaceInViewport = rectUnionArea(adRects);
 
     // Compute editorial content surface
     let contentArea = 0;
@@ -1284,7 +1307,7 @@ CLUTTER_MEASURE_JS = """
         }
     });
 
-    const adRatio = adSurfaceInViewport / viewportArea;
+    const adRatio = Math.min(adSurfaceInViewport / viewportArea, 1.0);
     const contentRatio = Math.min(contentArea / viewportArea, 1.0);
 
     return {
