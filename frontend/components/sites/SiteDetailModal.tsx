@@ -4,7 +4,8 @@ import { useState, useMemo } from 'react';
 import type { SiteEntry } from '@/lib/types';
 import { Badge } from '@/components/ui/Badge';
 import { ScoreDonut } from '@/components/ui/ScoreDonut';
-import { Globe, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Globe, Loader2, HelpCircle } from 'lucide-react';
 
 /* ── helpers ── */
 
@@ -137,7 +138,17 @@ export function SiteDetailModal({
         {/* Les 3 notes /10 en donut (rouge = mauvais → vert = bon) */}
         <div className="bg-surface-high rounded-xl p-5 mb-3">
           <div className="flex items-center justify-between mb-4">
-            <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant">Notes /10</p>
+            <div className="flex items-center gap-2">
+              <p className="font-label text-[9px] uppercase tracking-[0.2em] text-on-surface-variant">Notes /10</p>
+              <Link
+                href="/methodologie"
+                className="flex items-center gap-1 font-label text-[9px] text-accent/70 hover:text-accent transition-colors"
+                title="Comment ces notes sont calculées"
+              >
+                <HelpCircle className="w-3 h-3" />
+                Comment c&apos;est calculé&nbsp;?
+              </Link>
+            </div>
             {toReview && (
               <span className="font-label text-[10px] uppercase tracking-wider text-warning">À valider</span>
             )}
