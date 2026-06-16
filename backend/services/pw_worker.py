@@ -1274,17 +1274,11 @@ CLUTTER_MEASURE_JS = """
         try { document.querySelectorAll(sel).forEach(el => adElements.add(el)); } catch(e) {}
     });
 
-    // B. Cross-origin iframes
-    const siteDomain = location.hostname.replace(/^www\\./, '');
-    document.querySelectorAll('iframe[src]').forEach(iframe => {
-        try {
-            const src = new URL(iframe.src);
-            const iframeDomain = src.hostname.replace(/^www\\./, '');
-            if (iframeDomain !== siteDomain && !iframeDomain.endsWith('.' + siteDomain)) {
-                adElements.add(iframe);
-            }
-        } catch(e) {}
-    });
+    // B. (supprimé) On ne compte PLUS toutes les iframes cross-origin comme
+    // surface pub : ça encadrait les embeds fonctionnels (carte datatourisme,
+    // form Mailjet, vidéo YouTube…). On se fie aux pubs déjà détectées et
+    // surlignées par analyze_ads_multi_layer (section D, .mli-ad-highlight),
+    // qui applique les vraies règles (régie/IAB/friendly/conteneur ad).
 
     // C. GPT slots
     try {
